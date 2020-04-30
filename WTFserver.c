@@ -14,8 +14,24 @@
 #include <unistd.h>
 #include <limits.h>
 
+typedef struct file_nodes{
+	int version;
+	char* path;
+	char* hash;
+	struct file_nodes* next;
+} file_node;
+
+typedef struct read_nodes{
+	char c;
+	struct read_nodes* next;
+} read_node;
+
 void* handle_connection(void*);
 void checkout(int, char*);
+file_node* parse_manifest(int);
+//void cut_at_char(char*, char);
+//char* get_token2(char*, char*, char);
+//char* get_token(int, char);
 
 int main(int argc, char** argv){
 	int port = atoi(argv[1]);
@@ -122,5 +138,178 @@ void checkout(int client_socket, char* project_name){
 		printf("Project folder not found\n");
 		return;
 	}
-	printf("Found\n");
+	printf("Project found, sending over...\n");
+	char manifest_path[strlen(project_name)*2+11];
+	manifest_path[strlen(manifest_path)] = '\0';
+	strcpy(manifest_path, project_name);
+	strcat(manifest_path, "/");
+	strcat(manifest_path, project_name);
+	strcat(manifest_path, ".Manifest");
+	if((file = open(manifest_path, O_RDONLY)) == -1){
+		printf("Manifest not found\n");
+		return;
+	}
+	file_node* head = parse_manifest(file);
+	/*file_node* tmp = head;
+	while(tmp != NULL){
+		printf("%d %s %s\n", tmp -> version, tmp -> path, tmp -> hash);
+		tmp = tmp -> next;
+	}*/
+	
+	close(file);
+	
+	
+	
+	//free head
 }
+
+file_node* parse_manifest(int file){
+	char buffer[1000000];
+	bzero(buffer, sizeof(buffer));
+	int bytes_read;
+	bytes_read = read(file, buffer, sizeof(buffer));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return NULL;
+	}
+	file_node* head = (file_node*)malloc(sizeof(file_node));
+	strcpy(buffer, (strchr(buffer, '\n'))+1);
+	if(strchr(buffer, '\n') == NULL){
+		head -> version = -1;
+		head -> path = NULL;
+		head -> hash = NULL;
+		head -> next = NULL;
+	}
+	else{
+		int count = 0;
+		file_node* tmp = head;
+		while(strchr(buffer, '\n') != NULL){
+			char copy[sizeof(buffer)+1];
+			strcpy(copy, buffer);
+			char* cut = strchr(copy, '\n');
+			*cut = '\0';
+			char* token = malloc(sizeof(copy)+1);
+			int i;
+			for(i = 0; i <= sizeof(copy); i++){
+				token[i] = copy[i];
+			}
+			strcpy(buffer, strchr(buffer, '\n')+1);
+			if(count%3 == 0)
+				tmp -> version = atoi(token);
+			else if(count%3 == 1)
+				tmp -> path = token;
+			else if(count%3 == 2){
+				tmp -> hash = token;
+				if(strchr(buffer, '\n') == NULL){
+					tmp -> next = NULL;
+					return head;
+				}
+				file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
+				tmp -> next = new_file_node;
+				tmp = tmp -> next;
+			}
+			count++;
+		}
+	}
+	return head;
+	
+	
+	/*
+	file_node* head = (file_node*)malloc(sizeof(file_node));
+	char* token;
+	int count = 0;
+	token = get_token(file, '\n');
+	if((token = get_token(file, '\n')) == NULL)
+		head = NULL;
+	else{	
+		head -> version = atoi(token);
+		head -> path = get_token(file, '\n');
+		head -> hash = get_token(file, '\n');
+		head -> next = NULL;
+		file_node* tmp = head;
+		while((token = get_token(file, '\n')) != NULL){
+			if(count%3 == 0){
+				file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
+				new_file_node -> next = NULL;
+				tmp -> next = new_file_node;
+				tmp = tmp -> next;
+				tmp -> version = atoi(token);
+			}
+			else if(count%3 == 1)
+				tmp -> path = token;
+			else if(count%3 == 2)
+				tmp -> hash = token;
+			count++;
+		}
+	}
+	/*
+	file_node* tmp2 = head;
+	if(tmp2 == NULL)
+		printf("head null\n");
+	while(tmp2 != NULL){
+		printf("%d %s %s\n", tmp2 -> version, tmp2 -> path, tmp2 -> hash);
+		tmp2 = tmp2 -> next;
+	}*/
+}
+
+/*
+void cut_at_char(char* string, char c)
+{
+    //valid parameter
+    if (!string) return;
+	int i = 0;
+    //find the char you want or the end of the string.
+    while(string[i] != '\0' && string[i] != c)
+		i++;
+
+    //make that location the end of the string (if it wasn't already).
+    string[i] = '\0';
+}
+
+char* get_token2(char* string, char* token, char delimeter){
+	memcpy(token, string, sizeof(string)+1);
+	strcpy(string, strchr(string, delimeter)+1);
+	cut_at_char(token, delimeter);
+	return token;
+}*/
+/*
+char* get_token(int file, char delimeter){
+	char buffer;
+	int flag, start = 0, count = 0;
+	read_node* head = (read_node*)malloc(sizeof(read_node));
+	while((flag = read(file, &buffer, sizeof(buffer))) > 0){
+		if(start == 0){
+			start = 1;
+			count++;
+			head -> c = buffer;
+			head -> next = NULL;
+		}
+		else if(buffer == delimeter){
+			start = 0;
+			char* s = malloc(count+1);
+			s[count] = '\0';
+			count = 0;
+			read_node* tmp = head;
+			while(tmp -> next != NULL){
+				s[count] = tmp -> c;
+				count++;
+				tmp = tmp -> next;
+			}
+			s[count] = tmp -> c;
+			//free head
+			return s;
+		}
+		else{
+			count++;
+			read_node* new_read_node = (read_node*)malloc(sizeof(read_node));
+			new_read_node -> c = buffer;
+			new_read_node -> next = NULL;
+			read_node* tmp = head;
+			while(tmp -> next != NULL)
+				tmp = tmp -> next;
+			tmp -> next = new_read_node;
+		}
+	}
+	//free head
+	return NULL;
+}*/

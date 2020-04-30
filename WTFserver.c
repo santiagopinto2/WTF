@@ -15,6 +15,7 @@
 #include <limits.h>
 
 void* handle_connection(void*);
+void checkout(int, char*);
 
 int main(int argc, char** argv){
 	int port = atoi(argv[1]);
@@ -51,7 +52,7 @@ int main(int argc, char** argv){
 }
 
 void* handle_connection(void* p_client_socket){
-	int client_socket = *((int*)p_client_socket);
+	/*int client_socket = *((int*)p_client_socket);
 	free(p_client_socket);
 	char buffer[4096];
 	char message[1000000];
@@ -83,12 +84,43 @@ void* handle_connection(void* p_client_socket){
 			printf("%c", buffer2);
 			write(client_socket, &buffer2, 1);
 		}*/
-		while((bytes_read = read(file, message+msgsize, sizeof(message)-msgsize-1)) > 0)
+		/*while((bytes_read = read(file, message+msgsize, sizeof(message)-msgsize-1)) > 0)
 			msgsize += bytes_read;
 		write(client_socket, message, sizeof(message));
 		close(file);
 		printf("File sent\n");
+	}*/
+	
+	int client_socket = *((int*)p_client_socket);
+	free(p_client_socket);
+	char buffer[1000];
+	bzero(buffer, sizeof(buffer));
+	int bytes_read;
+	bytes_read = read(client_socket, buffer, sizeof(buffer));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return NULL;
 	}
+	if(strstr(buffer, "checkout") != NULL)
+		checkout(client_socket, strchr(buffer, ':')+1);
+		
+	/*
+	 * 
+	 * add other functions here
+	 * 
+	 * 
+	 * */
+	
+	
 	close(client_socket);
 	return NULL;
+}
+
+void checkout(int client_socket, char* project_name){
+	int file;
+	if((file = open(project_name, O_RDONLY)) == -1){
+		printf("Project folder not found\n");
+		return;
+	}
+	printf("Found\n");
 }

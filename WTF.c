@@ -22,6 +22,10 @@ int main(int argc, char** argv){
 		configure(argv[2], argv[3]);
 	else{
 		int ip_port_file=open("ip_port.configure", O_RDONLY);
+		if(ip_port_file == -1){
+			printf("Configure file not found\n");
+			return EXIT_FAILURE;
+		}
 		char buffer[100];
 		bzero(buffer, 100);
 		int bytes_read;
@@ -90,5 +94,9 @@ void configure(char* string_ip, char* string_port){
 }
 
 void checkout(int network_socket, char* project_name){
-	return;
+	char buffer[1000];
+	bzero(buffer, sizeof(buffer));
+	strcpy(buffer, "checkout:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
 }

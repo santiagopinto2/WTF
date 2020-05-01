@@ -215,7 +215,7 @@ file_node* parse_manifest(int file){
 	else{
 		int count = 0;
 		file_node* tmp = head;
-		while(strchr(buffer, '\n') != NULL || strchr(buffer, ' ') != NULL){
+		while(strchr(buffer, '\n') != NULL){
 			char* token = malloc(strchr(buffer, '\n')-buffer+1);	
 			if(count%3 == 0){
 				get_token(buffer, token, ' ');

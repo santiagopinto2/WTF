@@ -15,12 +15,22 @@
 #include <limits.h>
 #include <openssl/sha.h>
 
+typedef struct file_nodes{
+	int version;
+	char* path;
+	char* hash;
+	struct file_nodes* next;
+} file_node;
+
 void configure(char* string_ip, char* string_port);
 void checkout(int network_socket, char* project_name);
 void update(int network_socket, char* project_name);
 void get_path(char* path, char* project_name, char* extension);
+file_node* parse_manifest(int file);
 void get_token(char* message, char* token, char delimeter);
 int get_manifest_version(char* manifest_path);
+int get_file_list_length(file_node* head);
+void free_file_node(file_node* head);
 
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
@@ -75,8 +85,6 @@ int main(int argc, char** argv){
 		else if(strcmp(argv[1], "update") == 0)
 			update(network_socket, argv[2]);
 		
-		
-			
 		/*
 		 * 
 		 * 
@@ -169,6 +177,7 @@ void checkout(int network_socket, char* project_name){
 			file_length_string[j-hash_length] = hash_and_file_length[j];
 		int file_length = atoi(file_length_string);
 		if(i == file_list_length){
+			write(manifest_file, "\n", 1);
 			int new_file = creat(file_path, S_IRWXG|S_IRWXO|S_IRWXU);
 			write(new_file, message, strlen(message));
 			close(new_file);
@@ -204,6 +213,8 @@ void update(int network_socket, char* project_name){
 		printf("Client manifest not found\n");
 		return;
 	}
+	file_node* head = parse_manifest(manifest_file);
+	close(manifest_file);
 	char buffer[strlen(project_name)+8];
 	strcpy(buffer, "update:");
 	strcat(buffer, project_name);
@@ -215,14 +226,13 @@ void update(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
-	printf("message:\n%s\n", message);
 	//the message that will be sent over will be in this format
 	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
 	char update_file_path[strlen(project_name)*2+9];
 	get_path(update_file_path, project_name, "Update");
 	int update_file = creat(update_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
 	char manifest_version_string[strchr(message, ':')-message+1];
-	get_token(message, manifest_version_string, '\n');
+	get_token(message, manifest_version_string, ':');
 	int manifest_version = atoi(manifest_version_string);
 	if(get_manifest_version(manifest_path) == manifest_version){
 		printf("Up to date\n");
@@ -231,8 +241,16 @@ void update(int network_socket, char* project_name){
 		remove(conflict_file_path);
 		return;
 	}
+	int i;
+	int file_list_length = get_file_list_length(head);
+	//implement check for mostly empty manifest?
 	
-	
+
+	for(i = 1; i <= file_list_length; i++){
+		
+		
+		
+	}
 	
 	
 	/*
@@ -251,8 +269,8 @@ void update(int network_socket, char* project_name){
     * gcc WTF.c -o WTF -pthread -lssl -lcrypto
     * */
     
-    close(manifest_file);
     close(update_file);
+    free_file_node(head);
     //close conflict file
 }
 
@@ -262,6 +280,53 @@ void get_path(char* path, char* project_name, char* extension){
 	strcat(path, project_name);
 	strcat(path, ".");
 	strcat(path, extension);
+}
+
+file_node* parse_manifest(int file){
+	char buffer[1000000];
+	bzero(buffer, sizeof(buffer));
+	int bytes_read;
+	bytes_read = read(file, buffer, sizeof(buffer));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return NULL;
+	}
+	file_node* head = (file_node*)malloc(sizeof(file_node));
+	strcpy(buffer, (strchr(buffer, '\n'))+1);
+	if(strchr(buffer, '\n') == NULL){
+		head -> version = -1;
+		head -> path = NULL;
+		head -> hash = NULL;
+		head -> next = NULL;
+	}
+	else{
+		int count = 0;
+		file_node* tmp = head;
+		while(strchr(buffer, '\n') != NULL){
+			char* token = malloc(strchr(buffer, '\n')-buffer+1);	
+			if(count%3 == 0){
+				get_token(buffer, token, ' ');
+				tmp -> version = atoi(token);
+			}
+			else if(count%3 == 1){
+				get_token(buffer, token, ' ');
+				tmp -> path = token;
+			}
+			else if(count%3 == 2){
+				get_token(buffer, token, '\n');
+				tmp -> hash = token;
+				if(strchr(buffer, '\n') == NULL){
+					tmp -> next = NULL;
+					return head;
+				}
+				file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
+				tmp -> next = new_file_node;
+				tmp = tmp -> next;
+			}
+			count++;
+		}
+	}
+	return head;
 }
 
 void get_token(char* message, char* token, char delimeter){
@@ -291,4 +356,23 @@ int get_manifest_version(char* manifest_path){
 	}
 	close(file);
 	return -2;
+}
+
+int get_file_list_length(file_node* head){
+	int count = 1;
+	file_node* tmp = head;
+	while(tmp -> next != NULL){
+		count++;
+		tmp = tmp -> next;
+	}
+	return count;
+}
+
+void free_file_node(file_node* head){
+	file_node* tmp;
+	while(head!=NULL){
+		tmp = head;
+		head = head -> next;
+		free(tmp);
+	}
 }

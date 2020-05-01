@@ -18,8 +18,9 @@
 void configure(char* string_ip, char* string_port);
 void checkout(int network_socket, char* project_name);
 void update(int network_socket, char* project_name);
-void get_token(char* message, char* token);
-void get_manifest_path(char* manifest_path, char* project_name);
+void get_path(char* path, char* project_name, char* extension);
+void get_token(char* message, char* token, char delimeter);
+int get_manifest_version(char* manifest_path);
 
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
@@ -122,46 +123,46 @@ void checkout(int network_socket, char* project_name){
 		return;
 	}
 	printf("Project received, storing...\n");
-	get_manifest_path(buffer, project_name);
+	get_path(buffer, project_name, "Manifest");
 	int manifest_file = creat(buffer, S_IRWXG|S_IRWXO|S_IRWXU);
-	//the message that is sent over is in this format
-	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:file   file version...
+	//the message that will be sent over will be in this format
+	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:filefile version...
 	char manifest_version[strchr(message, ':')-message+1];
-	get_token(message, manifest_version);
+	get_token(message, manifest_version, ':');
 	write(manifest_file, manifest_version, strlen(manifest_version));
 	if(strlen(message) == 1){
 		printf("Finished storing project\n");
 		return;
 	}
 	char file_list_length_string[strchr(message, ':')-message+1];
-	get_token(message, file_list_length_string);
+	get_token(message, file_list_length_string, ':');
 	int file_list_length = atoi(file_list_length_string);
 	int i, j;
 	for(i = 1; i <= file_list_length; i++){
 		char file_version[strchr(message, ':')-message+1];
-		get_token(message, file_version);
+		get_token(message, file_version, ':');
 		write(manifest_file, "\n", 1);
 		write(manifest_file, file_version, strlen(file_version));
 		char file_path_length_string[strchr(message, ':')-message+1];
-		get_token(message, file_path_length_string);
+		get_token(message, file_path_length_string, ':');
 		int file_path_length = atoi(file_path_length_string);
 		char file_path_and_hash_length[strchr(message, ':')-message+1];
-		get_token(message, file_path_and_hash_length);
+		get_token(message, file_path_and_hash_length, ':');
 		char file_path[file_path_length+1];
 		strncpy(file_path, file_path_and_hash_length, file_path_length);
 		file_path[file_path_length] = '\0';
-		write(manifest_file, "\n", 1);
+		write(manifest_file, " ", 1);
 		write(manifest_file, file_path, strlen(file_path));
 		char hash_length_string[strlen(file_path_and_hash_length)-file_path_length+1];
 		for(j = file_path_length; j < strlen(file_path_and_hash_length); j++)
 			hash_length_string[j-file_path_length] = file_path_and_hash_length[j];
 		int hash_length = atoi(hash_length_string);
 		char hash_and_file_length[strchr(message, ':')-message+1];
-		get_token(message, hash_and_file_length);
+		get_token(message, hash_and_file_length, ':');
 		char hash[hash_length+1];
 		strncpy(hash, hash_and_file_length, hash_length);
 		hash[hash_length] = '\0';
-		write(manifest_file, "\n", 1);
+		write(manifest_file, " ", 1);
 		write(manifest_file, hash, strlen(hash));
 		char file_length_string[strlen(hash_and_file_length)-hash_length+1];
 		for(j = hash_length; j < strlen(hash_and_file_length); j++)
@@ -197,7 +198,7 @@ void checkout(int network_socket, char* project_name){
 
 void update(int network_socket, char* project_name){
 	char manifest_path[strlen(project_name)*2+11];
-	get_manifest_path(manifest_path, project_name);
+	get_path(manifest_path, project_name, "Manifest");
 	int manifest_file, bytes_read;
 	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Client manifest not found\n");
@@ -215,6 +216,21 @@ void update(int network_socket, char* project_name){
 		return;
 	}
 	printf("message:\n%s\n", message);
+	//the message that will be sent over will be in this format
+	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
+	char update_file_path[strlen(project_name)*2+9];
+	get_path(update_file_path, project_name, "Update");
+	int update_file = creat(update_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	char manifest_version_string[strchr(message, ':')-message+1];
+	get_token(message, manifest_version_string, '\n');
+	int manifest_version = atoi(manifest_version_string);
+	if(get_manifest_version(manifest_path) == manifest_version){
+		printf("Up to date\n");
+		char conflict_file_path[strlen(project_name)*2+11];
+		get_path(conflict_file_path, project_name, "Conflict");
+		remove(conflict_file_path);
+		return;
+	}
 	
 	
 	
@@ -235,22 +251,44 @@ void update(int network_socket, char* project_name){
     * gcc WTF.c -o WTF -pthread -lssl -lcrypto
     * */
     
-    
+    close(manifest_file);
+    close(update_file);
+    //close conflict file
 }
-void get_token(char* message, char* token){
+
+void get_path(char* path, char* project_name, char* extension){
+	strcpy(path, project_name);
+	strcat(path, "/");
+	strcat(path, project_name);
+	strcat(path, ".");
+	strcat(path, extension);
+}
+
+void get_token(char* message, char* token, char delimeter){
 	char copy[strlen(message)+1];
 	strcpy(copy, message);
-	char* cut = strchr(copy, ':');
+	char* cut = strchr(copy, delimeter);
 	*cut = '\0';
 	int i;
 	for(i = 0; i <= strlen(copy); i++)
 		token[i] = copy[i];
-	strcpy(message, strchr(message, ':')+1);
+	strcpy(message, strchr(message, delimeter)+1);
 }
 
-void get_manifest_path(char* manifest_path, char* project_name){
-	strcpy(manifest_path, project_name);
-	strcat(manifest_path, "/");
-	strcat(manifest_path, project_name);
-	strcat(manifest_path, ".Manifest");
+int get_manifest_version(char* manifest_path){
+	int file; 
+	if((file = open(manifest_path, O_RDONLY)) == -1)
+		return -1;
+	int flag;
+	int version = 0;
+	char buffer;
+	while((flag = read(file, &buffer, sizeof(buffer))) > 0){
+		if(buffer == '\n'){
+			close(file);
+			return version;
+		}
+		version = version*10+buffer-48;
+	}
+	close(file);
+	return -2;
 }

@@ -225,10 +225,10 @@ void update(int network_socket, char* project_name){
 	SHA1(data, strlen(data), hash);
 	int i;
 	char buf[SHA_DIGEST_LENGTH*2];
-	for (i=0; i < SHA_DIGEST_LENGTH; i++) {
+	for (i = 0; i < SHA_DIGEST_LENGTH; i++) {
         sprintf((char*)&(buf[i*2]), "%02x", hash[i]);
     }
-    printf("hash: %s\n", SHA_DIGEST_LENGTH, buf);*/
+    printf("hash: %s\n", buf);*/
 }
 void get_token(char* message, char* token){
 	char copy[strlen(message)+1];

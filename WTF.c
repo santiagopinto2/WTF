@@ -16,11 +16,12 @@
 
 void configure(char*, char*);
 void checkout(int, char*);
+void get_token(char*, char*);
 
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
 		configure(argv[2], argv[3]);
-	else{
+	else{		
 		int ip_port_file=open("ip_port.configure", O_RDONLY);
 		if(ip_port_file == -1){
 			printf("Configure file not found\n");
@@ -67,6 +68,8 @@ int main(int argc, char** argv){
 	
 		if(strcmp(argv[1], "checkout") == 0)
 			checkout(network_socket, argv[2]);
+		
+			
 		/*
 		 * 
 		 * 
@@ -79,7 +82,7 @@ int main(int argc, char** argv){
 		
 		
 			
-			
+		printf("Disconnecting from server\n");
 		close(network_socket);
 	}
 	return EXIT_SUCCESS;
@@ -94,9 +97,110 @@ void configure(char* string_ip, char* string_port){
 }
 
 void checkout(int network_socket, char* project_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) != -1){
+		printf("Folder already exists client side\n");
+		return;
+	}
+	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	char buffer[1000];
 	bzero(buffer, sizeof(buffer));
 	strcpy(buffer, "checkout:");
 	strcat(buffer, project_name);
 	write(network_socket, buffer, sizeof(buffer));
+	char message[1000000];
+	bzero(message, sizeof(message));
+	int bytes_read;
+	bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	printf("Project received, storing...\n");
+	bzero(buffer, sizeof(buffer));
+	strcpy(buffer, project_name);
+	strcat(buffer, "/");
+	strcat(buffer, project_name);
+	strcat(buffer, ".Manifest");
+	int manifest_file = creat(buffer, S_IRWXG|S_IRWXO|S_IRWXU);
+	//the message that is sent over is in this format
+	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:file   file version...
+	char manifest_version[strchr(message, ':')-message+1];
+	get_token(message, manifest_version);
+	write(manifest_file, manifest_version, strlen(manifest_version));
+	if(strlen(message) == 1){
+		printf("Finished storing project\n");
+		return;
+	}
+	char file_list_length_string[strchr(message, ':')-message+1];
+	get_token(message, file_list_length_string);
+	int file_list_length = atoi(file_list_length_string);
+	int i, j;
+	for(i = 1; i <= file_list_length; i++){
+		char file_version[strchr(message, ':')-message+1];
+		get_token(message, file_version);
+		write(manifest_file, "\n", 1);
+		write(manifest_file, file_version, strlen(file_version));
+		char file_path_length_string[strchr(message, ':')-message+1];
+		get_token(message, file_path_length_string);
+		int file_path_length = atoi(file_path_length_string);
+		char file_path_and_hash_length[strchr(message, ':')-message+1];
+		get_token(message, file_path_and_hash_length);
+		char file_path[file_path_length+1];
+		strncpy(file_path, file_path_and_hash_length, file_path_length);
+		file_path[file_path_length] = '\0';
+		write(manifest_file, "\n", 1);
+		write(manifest_file, file_path, strlen(file_path));
+		char hash_length_string[strlen(file_path_and_hash_length)-file_path_length+1];
+		for(j = file_path_length; j < strlen(file_path_and_hash_length); j++)
+			hash_length_string[j-file_path_length] = file_path_and_hash_length[j];
+		int hash_length = atoi(hash_length_string);
+		char hash_and_file_length[strchr(message, ':')-message+1];
+		get_token(message, hash_and_file_length);
+		char hash[hash_length+1];
+		strncpy(hash, hash_and_file_length, hash_length);
+		hash[hash_length] = '\0';
+		write(manifest_file, "\n", 1);
+		write(manifest_file, hash, strlen(hash));
+		char file_length_string[strlen(hash_and_file_length)-hash_length+1];
+		for(j = hash_length; j < strlen(hash_and_file_length); j++)
+			file_length_string[j-hash_length] = hash_and_file_length[j];
+		int file_length = atoi(file_length_string);
+		if(i == file_list_length){
+			int new_file = creat(file_path, S_IRWXG|S_IRWXO|S_IRWXU);
+			write(new_file, message, strlen(message));
+			close(new_file);
+		}
+		else{
+			char file_and_file_version[strchr(message, ':')-message+1];
+			for(j = 0; message[j] != ':'; j++)
+				file_and_file_version[j] = message[j];
+			file_and_file_version[strchr(message, ':')-message] = '\0';
+			char file_full[file_length+1];
+			strncpy(file_full, file_and_file_version, file_length);
+			file_full[file_length] = '\0';
+			int new_file = creat(file_path, S_IRWXG|S_IRWXO|S_IRWXU);
+			write(new_file, file_full, file_length);
+			close(new_file);
+			char tmp[strlen(message)+1];
+			bzero(tmp, sizeof(tmp));
+			for(j = file_length; j < strlen(message); j++)
+				tmp[j-file_length] = message[j];
+			bzero(message, strlen(message));
+			strcpy(message, tmp);
+		}	
+	}
+	close(manifest_file);
+	printf("Finished storing project\n");
+}
+
+void get_token(char* message, char* token){
+	char copy[strlen(message)+1];
+	strcpy(copy, message);
+	char* cut = strchr(copy, ':');
+	*cut = '\0';
+	int i;
+	for(i = 0; i <= strlen(copy); i++)
+		token[i] = copy[i];
+	strcpy(message, strchr(message, ':')+1);
 }

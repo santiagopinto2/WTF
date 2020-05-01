@@ -21,17 +21,11 @@ typedef struct file_nodes{
 	struct file_nodes* next;
 } file_node;
 
-typedef struct read_nodes{
-	char c;
-	struct read_nodes* next;
-} read_node;
-
 void* handle_connection(void*);
 void checkout(int, char*);
 file_node* parse_manifest(int);
-//void cut_at_char(char*, char);
-//char* get_token2(char*, char*, char);
-//char* get_token(int, char);
+int get_int_length(int);
+int get_file_list_length(file_node*);
 
 int main(int argc, char** argv){
 	int port = atoi(argv[1]);
@@ -67,46 +61,7 @@ int main(int argc, char** argv){
 	return EXIT_SUCCESS;
 }
 
-void* handle_connection(void* p_client_socket){
-	/*int client_socket = *((int*)p_client_socket);
-	free(p_client_socket);
-	char buffer[4096];
-	char message[1000000];
-	size_t bytes_read;
-	int msgsize = 0;
-	char actualpath[PATH_MAX+1];
-	while(1){
-		bzero(buffer, 4096);
-		bzero(message, 1000000);
-		msgsize = 0;
-		bytes_read = read(client_socket, buffer, sizeof(buffer));
-		if(bytes_read == -1){
-			printf("Read failed\n");
-			break;
-		}
-		printf("Request: %s\n", buffer);
-		char pathname[strchr(buffer, '\0')-buffer+2];
-		pathname[0] = '.';
-		pathname[1] = '/';
-		pathname[2] = '\0';
-		strcat(pathname, buffer);
-		pathname[strchr(buffer, '\0')-buffer+2]='\0';
-		int file = open(pathname, O_RDONLY);
-		if(file == -1){
-			perror("");
-			break;
-		}
-		/*while((bytes_read = read(file, &buffer2, sizeof(buffer2))) > 0){
-			printf("%c", buffer2);
-			write(client_socket, &buffer2, 1);
-		}*/
-		/*while((bytes_read = read(file, message+msgsize, sizeof(message)-msgsize-1)) > 0)
-			msgsize += bytes_read;
-		write(client_socket, message, sizeof(message));
-		close(file);
-		printf("File sent\n");
-	}*/
-	
+void* handle_connection(void* p_client_socket){	
 	int client_socket = *((int*)p_client_socket);
 	free(p_client_socket);
 	char buffer[1000];
@@ -127,7 +82,7 @@ void* handle_connection(void* p_client_socket){
 	 * 
 	 * */
 	
-	
+	printf("Disconnecting from client\n");
 	close(client_socket);
 	return NULL;
 }
@@ -150,15 +105,70 @@ void checkout(int client_socket, char* project_name){
 		return;
 	}
 	file_node* head = parse_manifest(file);
-	/*file_node* tmp = head;
-	while(tmp != NULL){
-		printf("%d %s %s\n", tmp -> version, tmp -> path, tmp -> hash);
-		tmp = tmp -> next;
-	}*/
-	
 	close(file);
-	
-	
+	//need to implement check for no files, just manifest
+	int manifest_version = get_manifest_version(manifest_path);
+	int file_list_length = get_file_list_length(head);
+	int i;
+	//the message that will be sent over will be in this format
+	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:file   file version...
+	char message[1000000];
+	bzero(message, sizeof(message));
+	char string[get_int_length(manifest_version)+1];
+	sprintf(string, "%d", manifest_version);
+	strcpy(message, string);
+	strcat(message, ":");
+	if(head -> version == -1){
+		strcat(message, "0");
+		write(client_socket, message, strlen(message));
+		return;
+	}
+	char string2[get_int_length(file_list_length)+1];
+	sprintf(string2, "%d", file_list_length);
+	strcat(message, string2);
+	strcat(message, ":");
+	file_node* tmp = head;
+	for(i = 1; i <= file_list_length; i++){
+		if((file = open(tmp -> path, O_RDONLY)) == -1){
+			printf("File not found\n");
+			return;
+		}
+		char buffer[1000000];
+		bzero(buffer, sizeof(buffer));
+		int bytes_read;
+		bytes_read = read(file, buffer, sizeof(buffer));
+		if(bytes_read == -1){
+			printf("Read failed\n");
+			return;
+		}
+		buffer[strlen(buffer)-1] = '\0';
+		int path_length = strlen(tmp -> path);
+		int hash_length = strlen(tmp -> hash);
+		int buffer_length = strlen(buffer);
+		char string3[get_int_length(tmp -> version)+1];
+		sprintf(string3, "%d", tmp -> version);
+		strcat(message, string3);
+		strcat(message, ":");
+		char string4[get_int_length(path_length)+1];
+		sprintf(string4, "%d", path_length);
+		strcat(message, string4);
+		strcat(message, ":");
+		strcat(message, tmp -> path);
+		char string5[get_int_length(hash_length)+1];
+		sprintf(string5, "%d", hash_length);
+		strcat(message, string5);
+		strcat(message, ":");
+		strcat(message, tmp -> hash);
+		char string6[get_int_length(buffer_length)+1];
+		sprintf(string6, "%d", buffer_length);
+		strcat(message, string6);
+		strcat(message, ":");
+		strcat(message, buffer);
+		close(file);
+		tmp = tmp -> next;
+	}
+	write(client_socket, message, strlen(message));
+	printf("Project sent\n");
 	
 	//free head
 }
@@ -190,9 +200,8 @@ file_node* parse_manifest(int file){
 			*cut = '\0';
 			char* token = malloc(sizeof(copy)+1);
 			int i;
-			for(i = 0; i <= sizeof(copy); i++){
+			for(i = 0; i <= sizeof(copy); i++)
 				token[i] = copy[i];
-			}
 			strcpy(buffer, strchr(buffer, '\n')+1);
 			if(count%3 == 0)
 				tmp -> version = atoi(token);
@@ -212,104 +221,41 @@ file_node* parse_manifest(int file){
 		}
 	}
 	return head;
-	
-	
-	/*
-	file_node* head = (file_node*)malloc(sizeof(file_node));
-	char* token;
-	int count = 0;
-	token = get_token(file, '\n');
-	if((token = get_token(file, '\n')) == NULL)
-		head = NULL;
-	else{	
-		head -> version = atoi(token);
-		head -> path = get_token(file, '\n');
-		head -> hash = get_token(file, '\n');
-		head -> next = NULL;
-		file_node* tmp = head;
-		while((token = get_token(file, '\n')) != NULL){
-			if(count%3 == 0){
-				file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
-				new_file_node -> next = NULL;
-				tmp -> next = new_file_node;
-				tmp = tmp -> next;
-				tmp -> version = atoi(token);
-			}
-			else if(count%3 == 1)
-				tmp -> path = token;
-			else if(count%3 == 2)
-				tmp -> hash = token;
-			count++;
-		}
-	}
-	/*
-	file_node* tmp2 = head;
-	if(tmp2 == NULL)
-		printf("head null\n");
-	while(tmp2 != NULL){
-		printf("%d %s %s\n", tmp2 -> version, tmp2 -> path, tmp2 -> hash);
-		tmp2 = tmp2 -> next;
-	}*/
 }
 
-/*
-void cut_at_char(char* string, char c)
-{
-    //valid parameter
-    if (!string) return;
-	int i = 0;
-    //find the char you want or the end of the string.
-    while(string[i] != '\0' && string[i] != c)
-		i++;
-
-    //make that location the end of the string (if it wasn't already).
-    string[i] = '\0';
-}
-
-char* get_token2(char* string, char* token, char delimeter){
-	memcpy(token, string, sizeof(string)+1);
-	strcpy(string, strchr(string, delimeter)+1);
-	cut_at_char(token, delimeter);
-	return token;
-}*/
-/*
-char* get_token(int file, char delimeter){
+int get_manifest_version(char* manifest_path){
+	int file; 
+	if((file = open(manifest_path, O_RDONLY)) == -1)
+		return -1;
+	int flag;
+	int version = 0;
 	char buffer;
-	int flag, start = 0, count = 0;
-	read_node* head = (read_node*)malloc(sizeof(read_node));
 	while((flag = read(file, &buffer, sizeof(buffer))) > 0){
-		if(start == 0){
-			start = 1;
-			count++;
-			head -> c = buffer;
-			head -> next = NULL;
+		if(buffer == '\n'){
+			close(file);
+			return version;
 		}
-		else if(buffer == delimeter){
-			start = 0;
-			char* s = malloc(count+1);
-			s[count] = '\0';
-			count = 0;
-			read_node* tmp = head;
-			while(tmp -> next != NULL){
-				s[count] = tmp -> c;
-				count++;
-				tmp = tmp -> next;
-			}
-			s[count] = tmp -> c;
-			//free head
-			return s;
-		}
-		else{
-			count++;
-			read_node* new_read_node = (read_node*)malloc(sizeof(read_node));
-			new_read_node -> c = buffer;
-			new_read_node -> next = NULL;
-			read_node* tmp = head;
-			while(tmp -> next != NULL)
-				tmp = tmp -> next;
-			tmp -> next = new_read_node;
-		}
+		version = version*10+buffer-48;
 	}
-	//free head
-	return NULL;
-}*/
+	close(file);
+	return -2;
+}
+
+int get_int_length(int num){
+	int a=1;
+	while(num>9){
+		a++;
+		num/=10;
+	}
+	return a;
+}
+
+int get_file_list_length(file_node* head){
+	int count = 1;
+	file_node* tmp = head;
+	while(tmp -> next != NULL){
+		count++;
+		tmp = tmp -> next;
+	}
+	return count;
+}

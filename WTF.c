@@ -13,10 +13,13 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <limits.h>
+#include <openssl/sha.h>
 
-void configure(char*, char*);
-void checkout(int, char*);
-void get_token(char*, char*);
+void configure(char* string_ip, char* string_port);
+void checkout(int network_socket, char* project_name);
+void update(int network_socket, char* project_name);
+void get_token(char* message, char* token);
+void get_manifest_path(char* manifest_path, char* project_name);
 
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
@@ -61,13 +64,16 @@ int main(int argc, char** argv){
 			printf("Connection failed\n");
 			return EXIT_FAILURE;
 		}
-		printf("Connected to the server\n");
+		printf("Connected to server\n");
 		
 		
 		
 	
 		if(strcmp(argv[1], "checkout") == 0)
 			checkout(network_socket, argv[2]);
+		else if(strcmp(argv[1], "update") == 0)
+			update(network_socket, argv[2]);
+		
 		
 			
 		/*
@@ -82,8 +88,8 @@ int main(int argc, char** argv){
 		
 		
 			
-		printf("Disconnecting from server\n");
 		close(network_socket);
+		printf("Disconnected from server\n");
 	}
 	return EXIT_SUCCESS;
 }
@@ -103,8 +109,7 @@ void checkout(int network_socket, char* project_name){
 		return;
 	}
 	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
-	char buffer[1000];
-	bzero(buffer, sizeof(buffer));
+	char buffer[strlen(project_name)+10];
 	strcpy(buffer, "checkout:");
 	strcat(buffer, project_name);
 	write(network_socket, buffer, sizeof(buffer));
@@ -117,11 +122,7 @@ void checkout(int network_socket, char* project_name){
 		return;
 	}
 	printf("Project received, storing...\n");
-	bzero(buffer, sizeof(buffer));
-	strcpy(buffer, project_name);
-	strcat(buffer, "/");
-	strcat(buffer, project_name);
-	strcat(buffer, ".Manifest");
+	get_manifest_path(buffer, project_name);
 	int manifest_file = creat(buffer, S_IRWXG|S_IRWXO|S_IRWXU);
 	//the message that is sent over is in this format
 	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:file   file version...
@@ -194,6 +195,41 @@ void checkout(int network_socket, char* project_name){
 	printf("Finished storing project\n");
 }
 
+void update(int network_socket, char* project_name){
+	char manifest_path[strlen(project_name)*2+11];
+	get_manifest_path(manifest_path, project_name);
+	int manifest_file, bytes_read;
+	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
+		printf("Client manifest not found\n");
+		return;
+	}
+	char buffer[strlen(project_name)+8];
+	strcpy(buffer, "update:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[10000];
+	bzero(message, sizeof(message));
+	bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	printf("message:\n%s\n", message);
+	
+	
+	
+	
+	/*
+	char data[] = "hello world";
+	unsigned char hash[SHA_DIGEST_LENGTH];
+	SHA1(data, strlen(data), hash);
+	int i;
+	char buf[SHA_DIGEST_LENGTH*2];
+	for (i=0; i < SHA_DIGEST_LENGTH; i++) {
+        sprintf((char*)&(buf[i*2]), "%02x", hash[i]);
+    }
+    printf("hash: %s\n", SHA_DIGEST_LENGTH, buf);*/
+}
 void get_token(char* message, char* token){
 	char copy[strlen(message)+1];
 	strcpy(copy, message);
@@ -203,4 +239,11 @@ void get_token(char* message, char* token){
 	for(i = 0; i <= strlen(copy); i++)
 		token[i] = copy[i];
 	strcpy(message, strchr(message, ':')+1);
+}
+
+void get_manifest_path(char* manifest_path, char* project_name){
+	strcpy(manifest_path, project_name);
+	strcat(manifest_path, "/");
+	strcat(manifest_path, project_name);
+	strcat(manifest_path, ".Manifest");
 }

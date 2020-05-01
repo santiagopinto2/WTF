@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <limits.h>
+#include <openssl/sha.h>
 
 typedef struct file_nodes{
 	int version;
@@ -21,11 +22,15 @@ typedef struct file_nodes{
 	struct file_nodes* next;
 } file_node;
 
-void* handle_connection(void*);
-void checkout(int, char*);
-file_node* parse_manifest(int);
-int get_int_length(int);
-int get_file_list_length(file_node*);
+void* handle_connection(void* p_client_socket);
+void checkout(int client_socket, char* project_name);
+void get_message(int client_socket, char* project_name, int file_full);
+void get_manifest_path(char* manifest_path, char* project_name);
+file_node* parse_manifest(int file);
+int get_manifest_version(char* manifest_path);
+int get_int_length(int num);
+int get_file_list_length(file_node* head);
+void free_file_node(file_node* head);
 
 int main(int argc, char** argv){
 	int port = atoi(argv[1]);
@@ -51,7 +56,7 @@ int main(int argc, char** argv){
 			printf("Accept failed\n");
 			return;
 		}
-		printf("Connected\n");
+		printf("Connected to client\n");
 		pthread_t t;
 		int* pclient = malloc(sizeof(int));
 		*pclient = client_socket;
@@ -74,6 +79,10 @@ void* handle_connection(void* p_client_socket){
 	}
 	if(strstr(buffer, "checkout") != NULL)
 		checkout(client_socket, strchr(buffer, ':')+1);
+	else if(strstr(buffer, "update") != NULL)
+		get_message(client_socket, strchr(buffer, ':')+1, 0);
+		
+		
 		
 	/*
 	 * 
@@ -82,8 +91,9 @@ void* handle_connection(void* p_client_socket){
 	 * 
 	 * */
 	
-	printf("Disconnecting from client\n");
+	
 	close(client_socket);
+	printf("Disconnected from client\n");
 	return NULL;
 }
 
@@ -93,25 +103,33 @@ void checkout(int client_socket, char* project_name){
 		printf("Project folder not found\n");
 		return;
 	}
+	close(file);
 	printf("Project found, sending over...\n");
+	get_message(client_socket, project_name, 1);
+}
+
+void get_message(int client_socket, char* project_name, int file_full){
 	char manifest_path[strlen(project_name)*2+11];
-	manifest_path[strlen(manifest_path)] = '\0';
-	strcpy(manifest_path, project_name);
-	strcat(manifest_path, "/");
-	strcat(manifest_path, project_name);
-	strcat(manifest_path, ".Manifest");
+	get_manifest_path(manifest_path, project_name);
+	int file;
 	if((file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Manifest not found\n");
 		return;
 	}
 	file_node* head = parse_manifest(file);
 	close(file);
-	//need to implement check for no files, just manifest
 	int manifest_version = get_manifest_version(manifest_path);
 	int file_list_length = get_file_list_length(head);
 	int i;
-	//the message that will be sent over will be in this format
-	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:file   file version...
+	/*
+	 * if contents of files are fully requested (file_full == 1) then
+	 * the message that will be sent over will be in this format
+	 * manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:filefile version...
+	 * 
+	 * if just manifest is requested (file_full == 0) then
+	 * the message that will be sent over will be in this format
+	 * manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
+	 * */
 	char message[1000000];
 	bzero(message, sizeof(message));
 	char string[get_int_length(manifest_version)+1];
@@ -129,22 +147,8 @@ void checkout(int client_socket, char* project_name){
 	strcat(message, ":");
 	file_node* tmp = head;
 	for(i = 1; i <= file_list_length; i++){
-		if((file = open(tmp -> path, O_RDONLY)) == -1){
-			printf("File not found\n");
-			return;
-		}
-		char buffer[1000000];
-		bzero(buffer, sizeof(buffer));
-		int bytes_read;
-		bytes_read = read(file, buffer, sizeof(buffer));
-		if(bytes_read == -1){
-			printf("Read failed\n");
-			return;
-		}
-		buffer[strlen(buffer)-1] = '\0';
 		int path_length = strlen(tmp -> path);
 		int hash_length = strlen(tmp -> hash);
-		int buffer_length = strlen(buffer);
 		char string3[get_int_length(tmp -> version)+1];
 		sprintf(string3, "%d", tmp -> version);
 		strcat(message, string3);
@@ -159,18 +163,40 @@ void checkout(int client_socket, char* project_name){
 		strcat(message, string5);
 		strcat(message, ":");
 		strcat(message, tmp -> hash);
-		char string6[get_int_length(buffer_length)+1];
-		sprintf(string6, "%d", buffer_length);
-		strcat(message, string6);
-		strcat(message, ":");
-		strcat(message, buffer);
-		close(file);
+		if(file_full){
+			if((file = open(tmp -> path, O_RDONLY)) == -1){
+				printf("File not found\n");
+				return;
+			}
+			char buffer[1000000];
+			bzero(buffer, sizeof(buffer));
+			int bytes_read;
+			bytes_read = read(file, buffer, sizeof(buffer));
+			if(bytes_read == -1){
+				printf("Read failed\n");
+				return;
+			}
+			buffer[strlen(buffer)-1] = '\0';
+			int buffer_length = strlen(buffer);
+			char string6[get_int_length(buffer_length)+1];
+			sprintf(string6, "%d", buffer_length);
+			strcat(message, string6);
+			strcat(message, ":");
+			strcat(message, buffer);
+			close(file);
+		}
 		tmp = tmp -> next;
 	}
 	write(client_socket, message, strlen(message));
 	printf("Project sent\n");
-	
-	//free head
+	free_file_node(head);
+}
+
+void get_manifest_path(char* manifest_path, char* project_name){
+	strcpy(manifest_path, project_name);
+	strcat(manifest_path, "/");
+	strcat(manifest_path, project_name);
+	strcat(manifest_path, ".Manifest");
 }
 
 file_node* parse_manifest(int file){
@@ -258,4 +284,13 @@ int get_file_list_length(file_node* head){
 		tmp = tmp -> next;
 	}
 	return count;
+}
+
+void free_file_node(file_node* head){
+	file_node* tmp;
+	while(head!=NULL){
+		tmp = head;
+		head = head -> next;
+		free(tmp);
+	}
 }

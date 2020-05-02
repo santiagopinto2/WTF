@@ -316,8 +316,8 @@ void update(int network_socket, char* project_name){
 		//	printf("server hash: %s\n", server_tmp -> hash);
 			if(strcmp(client_tmp -> hash, server_tmp -> hash) != 0 && strcmp(client_tmp -> hash, client_local_hash) != 0){
 				if(!has_conflict)
-					printf("Conflict found, removing update file\n");
-				printf("server hash: %s\nclient hash: %s\nlive hash: %s\n", server_tmp->hash, client_tmp->hash, client_local_hash);
+					printf("\nConflict found, removing update file\n");
+				//printf("server hash: %s\nclient hash: %s\nlive hash: %s\n", server_tmp->hash, client_tmp->hash, client_local_hash);
 				update_write(conflict_file, 'C', client_tmp -> path, client_local_hash, &has_conflict);	
 			}
 			else if(!has_conflict && client_tmp -> version != server_tmp -> version

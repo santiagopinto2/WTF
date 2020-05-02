@@ -211,10 +211,6 @@ file_node* parse_manifest(int file){
 	strcpy(buffer_tmp, strchr(buffer, '\n')+1);
 	bzero(buffer, strlen(buffer));
 	strcpy(buffer, buffer_tmp);
-	/*char buffer_tmp2[strlen(strchr(buffer, '\n'))+1];
-	strcpy(buffer_tmp2, strchr(buffer, '\n'));
-	bzero(buffer, strlen(buffer));
-	strcpy(buffer, buffer_tmp2);*/
 	if(strchr(buffer, '\n') == NULL){
 		head -> version = -1;
 		head -> path = NULL;
@@ -252,13 +248,13 @@ file_node* parse_manifest(int file){
 }
 
 void get_token(char* message, char* token, char delimeter){
-	char copy[strlen(message)+1];
+	char* copy = malloc(strlen(message)+1);
 	strcpy(copy, message);
 	copy[strchr(message, delimeter)-message] = '\0';
 	int i;
 	for(i = 0; i <= strlen(copy); i++)
 		token[i] = copy[i];
-	char message_tmp[strlen(strchr(message, delimeter))+1];
+	char* message_tmp = malloc(strlen(strchr(message, delimeter))+1);
 	strcpy(message_tmp, strchr(message, delimeter)+1);
 	bzero(message, strlen(message));
 	strcpy(message, message_tmp);

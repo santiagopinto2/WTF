@@ -233,14 +233,14 @@ void update(int network_socket, char* project_name){
 		free_file_node(client_head);
 		return;
 	}
-	char update_file_path[strlen(project_name)*2+9];
+	char* update_file_path = malloc(strlen(project_name)*2+9);
 	get_path(update_file_path, project_name, "Update");
 	int update_file = creat(update_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
-	char conflict_file_path[strlen(project_name)*2+11];
+	char* conflict_file_path = malloc(strlen(project_name)*2+11);
 	get_path(conflict_file_path, project_name, "Conflict");
 	//the message that will be sent over will be in this format
 	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
-	char manifest_version_string[strchr(message, ':')-message+1];
+	char* manifest_version_string = malloc(strchr(message, ':')-message+1);
 	get_token(message, manifest_version_string, ':');
 	int manifest_version = atoi(manifest_version_string);
 	if(get_manifest_version(manifest_path) == manifest_version){
@@ -261,7 +261,13 @@ void update(int network_socket, char* project_name){
 	//int file_list_length = get_file_list_length(head);
 	int conflict_file = creat(conflict_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
 	file_node* server_head = parse_message(message);
-	/*file_node* tmp3 = server_head;
+	/*file_node* tmp4 = client_head;
+	while(tmp4!= NULL){
+		printf("version: %d\npath: %s\nhash: %s\n", tmp4->version, tmp4->path, tmp4->hash);
+		tmp4=tmp4->next;
+	}
+	printf("\n");
+	file_node* tmp3 = server_head;
 	while(tmp3!= NULL){
 		printf("version: %d\npath: %s\nhash: %s\n", tmp3->version, tmp3->path, tmp3->hash);
 		tmp3=tmp3->next;
@@ -297,11 +303,11 @@ void update(int network_socket, char* project_name){
 			}
 		}
 		else{
-			unsigned char buf[SHA_DIGEST_LENGTH];
+			unsigned char* buf = malloc(SHA_DIGEST_LENGTH);
 			int file = open(client_tmp -> path, O_RDONLY);
 			bzero(message, sizeof(message));
 			read(file, message, sizeof(message));
-			char client_local_hash[SHA_DIGEST_LENGTH*2];
+			char* client_local_hash = malloc(SHA_DIGEST_LENGTH*2);
 			SHA1(message, strlen(message), buf);
 			for (i = 0; i < SHA_DIGEST_LENGTH; i++)
 				sprintf((char*)&(client_local_hash[i*2]), "%02x", buf[i]);
@@ -311,6 +317,7 @@ void update(int network_socket, char* project_name){
 			if(strcmp(client_tmp -> hash, server_tmp -> hash) != 0 && strcmp(client_tmp -> hash, client_local_hash) != 0){
 				if(!has_conflict)
 					printf("Conflict found, removing update file\n");
+				printf("server hash: %s\nclient hash: %s\nlive hash: %s\n", server_tmp->hash, client_tmp->hash, client_local_hash);
 				update_write(conflict_file, 'C', client_tmp -> path, client_local_hash, &has_conflict);	
 			}
 			else if(!has_conflict && client_tmp -> version != server_tmp -> version
@@ -381,16 +388,23 @@ void get_path(char* path, char* project_name, char* extension){
 }
 
 file_node* parse_manifest(int file){
-	char buffer[1000000];
+	char* buffer = malloc(10000);
 	bzero(buffer, sizeof(buffer));
-	int bytes_read;
-	bytes_read = read(file, buffer, sizeof(buffer));
+	int bytes_read, i = 0;
+	char buffer2;
+	while((bytes_read = read(file, &buffer2, sizeof(buffer2))) > 0){
+		buffer[i] = buffer2;
+		i++;
+	}
 	if(bytes_read == -1){
 		printf("Read failed\n");
 		return NULL;
 	}
 	file_node* head = (file_node*)malloc(sizeof(file_node));
-	strcpy(buffer, (strchr(buffer, '\n'))+1);
+	char* buffer_tmp = malloc(strlen(strchr(buffer, '\n'))+1);
+	strcpy(buffer_tmp, strchr(buffer, '\n')+1);
+	bzero(buffer, strlen(buffer));
+	strcpy(buffer, buffer_tmp);
 	if(strchr(buffer, '\n') == NULL){
 		head -> version = -1;
 		head -> path = NULL;
@@ -430,7 +444,7 @@ file_node* parse_manifest(int file){
 file_node* parse_message(char* message){
 	file_node* head = (file_node*)malloc(sizeof(file_node));
 	file_node* tmp = head;
-	char file_list_length_string[strchr(message, ':')-message+1];
+	char* file_list_length_string = malloc(strchr(message, ':')-message+1);
 	get_token(message, file_list_length_string, ':');
 	int file_list_length = atoi(file_list_length_string);
 	int i, j;
@@ -442,10 +456,10 @@ file_node* parse_message(char* message){
 		get_token(message, file_version_string, ':');
 		int file_version = atoi(file_version_string);
 		tmp -> version = file_version;
-		char file_path_length_string[strchr(message, ':')-message+1];
+		char* file_path_length_string = malloc(strchr(message, ':')-message+1);
 		get_token(message, file_path_length_string, ':');
 		int file_path_length = atoi(file_path_length_string);
-		char file_path_and_hash_length[strchr(message, ':')-message+1];
+		char* file_path_and_hash_length = malloc(strchr(message, ':')-message+1);
 		get_token(message, file_path_and_hash_length, ':');
 		char* file_path = malloc(file_path_length+1);
 		strncpy(file_path, file_path_and_hash_length, file_path_length);
@@ -483,13 +497,13 @@ file_node* parse_message(char* message){
 }
 
 void get_token(char* message, char* token, char delimeter){
-	char copy[strlen(message)+1];
+	char* copy = malloc(strlen(message)+1);
 	strcpy(copy, message);
 	copy[strchr(message, delimeter)-message] = '\0';
 	int i;
 	for(i = 0; i <= strlen(copy); i++)
 		token[i] = copy[i];
-	char message_tmp[strlen(strchr(message, delimeter))+1];
+	char* message_tmp = malloc(strlen(strchr(message, delimeter))+1);
 	strcpy(message_tmp, strchr(message, delimeter)+1);
 	bzero(message, strlen(message));
 	strcpy(message, message_tmp);

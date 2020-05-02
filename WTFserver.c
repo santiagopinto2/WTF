@@ -24,6 +24,7 @@ typedef struct file_nodes{
 
 void* handle_connection(void* p_client_socket);
 void get_message(int client_socket, char* project_name, int file_full, char* looking_for);
+void upgrade(int client_socket, char* project_name);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
 void get_token(char* message, char* token, char delimeter);
@@ -56,7 +57,7 @@ int main(int argc, char** argv){
 			printf("Accept failed\n");
 			return;
 		}
-		printf("Connected to client\n");
+		printf("Connected to client\n\n");
 		pthread_t t;
 		int* pclient = malloc(sizeof(int));
 		*pclient = client_socket;
@@ -77,12 +78,12 @@ void* handle_connection(void* p_client_socket){
 		printf("Read failed\n");
 		return NULL;
 	}
-	if(strstr(buffer, "checkout") != NULL){
+	if(strstr(buffer, "checkout") != NULL)
 		get_message(client_socket, strchr(buffer, ':')+1, 1, "Project");
-		
-	}
 	else if(strstr(buffer, "update") != NULL)
 		get_message(client_socket, strchr(buffer, ':')+1, 0, "Manifest");
+	else if(strstr(buffer, "upgrade") != NULL)
+		upgrade(client_socket, strchr(buffer, ':')+1);
 		
 		
 		
@@ -95,7 +96,7 @@ void* handle_connection(void* p_client_socket){
 	
 	
 	close(client_socket);
-	printf("Disconnected from client\n");
+	printf("\nDisconnected from client\n");
 	return NULL;
 }
 
@@ -103,6 +104,7 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 	int file;
 	if((file = open(project_name, O_RDONLY)) == -1){
 		printf("Project folder not found\n");
+		write(client_socket, "Project folder not found", strlen("Project folder not found"));
 		return;
 	}
 	close(file);
@@ -187,6 +189,68 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 	write(client_socket, message, strlen(message));
 	printf("%s sent\n", looking_for);
 	free_file_node(head);
+}
+
+void upgrade(int client_socket, char* project_name){
+	int file, manifest_file;
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, "Manifest");
+	if((file = open(project_name, O_RDONLY)) == -1){
+		printf("Project folder not found\n");
+		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
+		return;
+	}
+	else{
+		int manifest_version = get_manifest_version(manifest_path);
+		char string[get_int_length(manifest_version)+1];
+		sprintf(string, "%d", manifest_version);
+		write(client_socket, string, strlen(string));
+	}
+	close(file);
+	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
+		printf("Manifest not found\n");
+		return;
+	}
+	char buffer[10000], message[10000];
+	int bytes_read, file_tmp;
+	file_node* head = parse_manifest(manifest_file);
+	close(manifest_file);
+	while(1){
+		bzero(buffer, sizeof(buffer));
+		bytes_read = read(client_socket, buffer, sizeof(buffer));
+		if(bytes_read == -1 || strcmp(buffer, "Upgrade done") == 0 || (file_tmp = open(buffer, O_RDONLY)) == -1){
+			if(bytes_read == -1)
+				printf("Read failed\n");
+			else if((file_tmp = open(buffer, O_RDONLY)) == -1 && !(strcmp(buffer, "Upgrade done") == 0))
+				printf("File not found\n");
+			free_file_node(head);
+			return;
+		}
+		file_node* tmp = head;
+		while(tmp != NULL && strcmp(tmp -> path, buffer) != 0)
+			tmp = tmp -> next;
+		if(tmp == NULL){
+			printf("File not found\n");
+			free_file_node(head);
+			close(file_tmp);
+			return;
+		}
+		bzero(buffer, sizeof(buffer));
+		bytes_read = read(file_tmp, buffer, sizeof(buffer));
+		bzero(message, sizeof(message));
+		char string[get_int_length(tmp -> version)+1];
+		sprintf(string, "%d", tmp -> version);
+		strcpy(message, string);
+		strcat(message, ":");
+		if(tmp -> next == NULL)
+			strcat(message, "NULL");
+		else
+			strcat(message, tmp -> next -> path);
+		strcat(message, ":");
+		strcat(message, buffer);
+		write(client_socket, message, strlen(message));
+		close(file_tmp);
+	}
 }
 
 void get_path(char* path, char* project_name, char* extension){

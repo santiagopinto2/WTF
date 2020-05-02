@@ -22,17 +22,28 @@ typedef struct file_nodes{
 	struct file_nodes* next;
 } file_node;
 
+typedef struct update_nodes{
+	char action;
+	char* path;
+	struct update_nodes* next;
+}update_node;
+
 void configure(char* string_ip, char* string_port);
 void checkout(int network_socket, char* project_name);
 void update(int network_socket, char* project_name);
 void update_write(int file, char c, char* path, char* hash, int* has_update);
+void upgrade(int network_socket, char* project_name);
+update_node* parse_update(int file);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
+void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head);
 file_node* parse_message(char* message);
 void get_token(char* message, char* token, char delimeter);
 int get_manifest_version(char* manifest_path);
+int get_int_length(int num);
 int get_file_list_length(file_node* head);
 void free_file_node(file_node* head);
+void free_update_node(update_node* head);
 
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
@@ -76,7 +87,7 @@ int main(int argc, char** argv){
 			printf("Connection failed\n");
 			return EXIT_FAILURE;
 		}
-		printf("Connected to server\n");
+		printf("Connected to server\n\n");
 		
 		
 		
@@ -85,6 +96,8 @@ int main(int argc, char** argv){
 			checkout(network_socket, argv[2]);
 		else if(strcmp(argv[1], "update") == 0)
 			update(network_socket, argv[2]);
+		else if(strcmp(argv[1], "upgrade") == 0)
+			upgrade(network_socket, argv[2]);
 		
 		/*
 		 * 
@@ -99,7 +112,7 @@ int main(int argc, char** argv){
 		
 			
 		close(network_socket);
-		printf("Disconnected from server\n");
+		printf("\nDisconnected from server\n");
 	}
 	return EXIT_SUCCESS;
 }
@@ -118,7 +131,6 @@ void checkout(int network_socket, char* project_name){
 		printf("Folder already exists client side\n");
 		return;
 	}
-	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	char buffer[strlen(project_name)+10];
 	strcpy(buffer, "checkout:");
 	strcat(buffer, project_name);
@@ -131,6 +143,11 @@ void checkout(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
+	if(strstr(message, "Project folder not found") != NULL){
+		printf("Project folder not found server side\n");
+		return;
+	}
+	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	printf("Project received, storing...\n");
 	get_path(buffer, project_name, "Manifest");
 	int manifest_file = creat(buffer, S_IRWXG|S_IRWXO|S_IRWXU);
@@ -233,6 +250,10 @@ void update(int network_socket, char* project_name){
 		free_file_node(client_head);
 		return;
 	}
+	if(strstr(message, "Project folder not found") != NULL){
+		printf("Project folder not found server side\n");
+		return;
+	}
 	char* update_file_path = malloc(strlen(project_name)*2+9);
 	get_path(update_file_path, project_name, "Update");
 	int update_file = creat(update_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
@@ -311,6 +332,7 @@ void update(int network_socket, char* project_name){
 			SHA1(message, strlen(message), buf);
 			for (i = 0; i < SHA_DIGEST_LENGTH; i++)
 				sprintf((char*)&(client_local_hash[i*2]), "%02x", buf[i]);
+			printf("message: %s\n", message);
 		//	printf("client local hash: %s\n", client_local_hash);
 		//	printf("client hash: %s\n", client_tmp -> hash);
 		//	printf("server hash: %s\n", server_tmp -> hash);
@@ -379,6 +401,191 @@ void update_write(int file, char c, char* path, char* hash, int* has_update_or_c
 	printf("%c %s\n", c, path);
 }
 
+void upgrade(int network_socket, char* project_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project not found\n");
+		return;
+	}
+	char conflict_path[strlen(project_name)*2+11];
+	get_path(conflict_path, project_name, "Conflict");
+	if(stat(conflict_path, &st) != -1){
+		printf("Conflict file found, first resolve all conflicts and then update again\n");
+		return;
+	}
+	char update_path[strlen(project_name)*2+9];
+	get_path(update_path, project_name, "Update");
+	int update_file;
+	if((update_file = open(update_path, O_RDONLY)) == -1){
+		printf("Update file not found, first perform an update\n");
+		close(update_file);
+		return;
+	}
+	char buffer[strlen(project_name)+9];
+	strcpy(buffer, "upgrade:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[1000];
+	bzero(message, sizeof(message));
+	int i = 0, bytes_read;
+	bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	int manifest_version;
+	if(strstr(message, "Project folder not found") != NULL){
+		printf("Project folder not found server side\n");
+		return;
+	}
+	else
+		manifest_version = atoi(message);
+	update_node* update_head = parse_update(update_file);
+	close(update_file);
+	if(update_head -> action == 'Z'){
+		("No changes were found in update file\n");
+		remove(update_path);
+		return;
+	}
+	printf("Starting update changes...\n");
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, "Manifest");
+	int manifest_file;
+	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
+		printf("Client manifest not found\n");
+		return;
+	}
+	file_node* manifest_head = parse_manifest(manifest_file);
+	close(manifest_file);	
+	update_node* update_tmp = update_head;
+	char buffer2;
+	while(update_tmp != NULL){
+		if(update_tmp -> action == 'D'){
+			file_node* manifest_tmp = manifest_head;
+			if(strcmp(manifest_tmp -> path, update_tmp -> path) == 0){
+				manifest_head = manifest_head -> next;
+			}
+			else{
+				while(manifest_tmp -> next != NULL){
+					if(strcmp(manifest_tmp -> next -> path, update_tmp -> path) == 0){
+						manifest_tmp -> next = manifest_tmp -> next -> next;
+						break;
+					}
+					manifest_tmp = manifest_tmp ->next;
+				}
+			}
+			remove(update_tmp -> path);
+		}
+		else if(update_tmp -> action == 'A' || update_tmp -> action == 'M'){
+			char buffer[strlen(update_tmp -> path)+1];
+			strcpy(buffer, update_tmp -> path);
+			write(network_socket, buffer, strlen(buffer));
+			bzero(message, sizeof(message));
+			bytes_read = read(network_socket, message, sizeof(message));
+			int file_tmp = creat(update_tmp -> path, S_IRWXG|S_IRWXO|S_IRWXU);
+			char file_version_string[strchr(message, ':')-message+1];
+			get_token(message, file_version_string, ':');
+			int file_version = atoi(file_version_string);
+			char file_next_path[strchr(message, ':')-message+1];
+			get_token(message, file_next_path, ':');
+			write(file_tmp, message, strlen(message));
+			unsigned char* buf = malloc(SHA_DIGEST_LENGTH);
+			bzero(buf, sizeof(buf));
+			char* new_hash = malloc(SHA_DIGEST_LENGTH*2);
+			SHA1(message, strlen(message), buf);
+			for (i = 0; i < SHA_DIGEST_LENGTH; i++)
+				sprintf((char*)&(new_hash[i*2]), "%02x", buf[i]);
+			file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
+			new_file_node -> version = file_version;
+			new_file_node -> path = malloc(strlen(update_tmp -> path)+1);
+			strcpy(new_file_node -> path, update_tmp -> path);
+			new_file_node -> hash = malloc(strlen(new_hash)+1);
+			strcpy(new_file_node -> hash, new_hash);
+			new_file_node -> hash[strlen(new_hash)-1] = '\0';
+			file_node* manifest_tmp = manifest_head;
+			if(update_tmp -> action == 'A'){
+				if(strcmp(file_next_path, "NULL") == 0){
+					while(manifest_tmp -> next != NULL)
+						manifest_tmp = manifest_tmp -> next;
+					new_file_node -> next = NULL;
+					manifest_tmp -> next = new_file_node;
+				}
+				else{
+					while(manifest_tmp -> next != NULL){
+						if(strcmp(manifest_tmp -> next -> path, file_next_path) == 0){
+							new_file_node -> next = manifest_tmp -> next;
+							manifest_tmp -> next = new_file_node;
+							break;
+						}
+						manifest_tmp = manifest_tmp -> next;
+					}
+				}
+			}
+			else if(update_tmp -> action == 'M'){
+				while(strcmp(manifest_tmp -> next -> path, update_tmp -> path) != 0)
+					manifest_tmp = manifest_tmp -> next;
+				new_file_node -> next = manifest_tmp -> next -> next;
+				manifest_tmp -> next = new_file_node;
+			}
+			close(file_tmp);
+		}
+		update_tmp = update_tmp -> next;
+	}
+	write(network_socket, "Upgrade done", sizeof("Upgrade done"));
+	parse_manifest_nodes(manifest_path, manifest_version, manifest_head);
+	remove(update_path);
+	free_file_node(manifest_head);
+	free_update_node(update_head);
+	printf("Finished update changes\n");
+}
+
+update_node* parse_update(int file){
+	char* buffer = malloc(1000);
+	bzero(buffer, sizeof(buffer));
+	int bytes_read, i = 0;
+	char buffer2;
+	while((bytes_read = read(file, &buffer2, sizeof(buffer2))) > 0){
+		buffer[i] = buffer2;
+		i++;
+	}
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return NULL;
+	}
+	update_node* head = (update_node*)malloc(sizeof(update_node));
+	if(strchr(buffer, '\n') == NULL){
+		head -> action = 'Z';
+		head -> path = NULL;
+		head -> next = NULL;
+		return head;
+	}
+	int count = 0;
+	update_node* tmp = head;
+	while(strchr(buffer, '\n') != NULL){
+		if(count%2 == 0){
+			char* token = malloc(strchr(buffer, ' ')-buffer+1);
+			get_token(buffer, token, ' ');
+			tmp -> action = token[0];
+		}
+		else if(count%2 == 1){
+			char* token = malloc(strchr(buffer, '\n')-buffer+1);
+			get_token(buffer, token, ' ');
+			tmp -> path = token;
+			char dummy[strchr(buffer, '\n')-buffer+1];
+			get_token(buffer, dummy, '\n');
+			if(strchr(buffer, '\n') == NULL){
+				tmp -> next = NULL;
+				return head;
+			}
+			update_node* new_update_node = (update_node*)malloc(sizeof(update_node));
+			tmp -> next= new_update_node;
+			tmp = tmp -> next;
+		}
+		count++;
+	}
+	return head;
+}
+
 void get_path(char* path, char* project_name, char* extension){
 	strcpy(path, project_name);
 	strcat(path, "/");
@@ -410,35 +617,57 @@ file_node* parse_manifest(int file){
 		head -> path = NULL;
 		head -> hash = NULL;
 		head -> next = NULL;
+		return head;
 	}
-	else{
-		int count = 0;
-		file_node* tmp = head;
-		while(strchr(buffer, '\n') != NULL){
-			char* token = malloc(strchr(buffer, '\n')-buffer+1);	
-			if(count%3 == 0){
-				get_token(buffer, token, ' ');
-				tmp -> version = atoi(token);
-			}
-			else if(count%3 == 1){
-				get_token(buffer, token, ' ');
-				tmp -> path = token;
-			}
-			else if(count%3 == 2){
-				get_token(buffer, token, '\n');
-				tmp -> hash = token;
-				if(strchr(buffer, '\n') == NULL){
-					tmp -> next = NULL;
-					return head;
-				}
-				file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
-				tmp -> next = new_file_node;
-				tmp = tmp -> next;
-			}
-			count++;
+	int count = 0;
+	file_node* tmp = head;
+	while(strchr(buffer, '\n') != NULL){
+		if(count%3 == 0){
+			char* token = malloc(strchr(buffer, ' ')-buffer+1);	
+			get_token(buffer, token, ' ');
+			tmp -> version = atoi(token);
 		}
+		else if(count%3 == 1){
+			char* token = malloc(strchr(buffer, ' ')-buffer+1);	
+			get_token(buffer, token, ' ');
+			tmp -> path = token;
+		}
+		else if(count%3 == 2){
+			char* token = malloc(strchr(buffer, '\n')-buffer+1);	
+			get_token(buffer, token, '\n');
+			tmp -> hash = token;
+			if(strchr(buffer, '\n') == NULL){
+				tmp -> next = NULL;
+				return head;
+			}
+			file_node* new_file_node = (file_node*)malloc(sizeof(file_node));
+			tmp -> next = new_file_node;
+			tmp = tmp -> next;
+		}
+		count++;
 	}
 	return head;
+}
+
+void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head){
+	int manifest_file = creat(manifest_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	char string[get_int_length(manifest_version)+1];
+	sprintf(string, "%d", manifest_version);
+	write(manifest_file, string, get_int_length(manifest_version));
+	write(manifest_file, "\n", 1);
+	file_node* tmp = head;
+	while(tmp != NULL){
+		char string2[get_int_length(tmp -> version)+1];
+		sprintf(string2, "%d", tmp -> version);
+		write(manifest_file, string2, get_int_length(tmp -> version));
+		write(manifest_file, " ", 1);
+		write(manifest_file, tmp -> path, strlen(tmp -> path));
+		write(manifest_file, " ", 1);
+		write(manifest_file, tmp -> hash, strlen(tmp -> hash));
+		write(manifest_file, "\n", 1);
+		tmp = tmp -> next;
+	}
+	close(manifest_file);
 }
 
 file_node* parse_message(char* message){
@@ -527,6 +756,15 @@ int get_manifest_version(char* manifest_path){
 	return -2;
 }
 
+int get_int_length(int num){
+	int a=1;
+	while(num>9){
+		a++;
+		num/=10;
+	}
+	return a;
+}
+
 int get_file_list_length(file_node* head){
 	int count = 1;
 	file_node* tmp = head;
@@ -539,6 +777,15 @@ int get_file_list_length(file_node* head){
 
 void free_file_node(file_node* head){
 	file_node* tmp;
+	while(head!=NULL){
+		tmp = head;
+		head = head -> next;
+		free(tmp);
+	}
+}
+
+void free_update_node(update_node* head){
+	update_node* tmp;
 	while(head!=NULL){
 		tmp = head;
 		head = head -> next;

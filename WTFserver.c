@@ -23,7 +23,7 @@ typedef struct file_nodes{
 } file_node;
 
 void* handle_connection(void* p_client_socket);
-void get_message(int client_socket, char* project_name, int file_full);
+void get_message(int client_socket, char* project_name, int file_full, char* looking_for);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
 void get_token(char* message, char* token, char delimeter);
@@ -77,10 +77,12 @@ void* handle_connection(void* p_client_socket){
 		printf("Read failed\n");
 		return NULL;
 	}
-	if(strstr(buffer, "checkout") != NULL)
-		get_message(client_socket, strchr(buffer, ':')+1, 1);
+	if(strstr(buffer, "checkout") != NULL){
+		get_message(client_socket, strchr(buffer, ':')+1, 1, "Project");
+		
+	}
 	else if(strstr(buffer, "update") != NULL)
-		get_message(client_socket, strchr(buffer, ':')+1, 0);
+		get_message(client_socket, strchr(buffer, ':')+1, 0, "Manifest");
 		
 		
 		
@@ -97,20 +99,20 @@ void* handle_connection(void* p_client_socket){
 	return NULL;
 }
 
-void get_message(int client_socket, char* project_name, int file_full){
+void get_message(int client_socket, char* project_name, int file_full, char* looking_for){
 	int file;
 	if((file = open(project_name, O_RDONLY)) == -1){
 		printf("Project folder not found\n");
 		return;
 	}
 	close(file);
-	printf("Project found, sending over...\n");
 	char manifest_path[strlen(project_name)*2+11];
 	get_path(manifest_path, project_name, "Manifest");
 	if((file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Manifest not found\n");
 		return;
 	}
+	printf("%s found, sending over...\n\n", looking_for);
 	file_node* head = parse_manifest(file);
 	close(file);
 	int manifest_version = get_manifest_version(manifest_path);
@@ -183,7 +185,7 @@ void get_message(int client_socket, char* project_name, int file_full){
 		tmp = tmp -> next;
 	}
 	write(client_socket, message, strlen(message));
-	printf("Project sent\n");
+	printf("%s sent\n", looking_for);
 	free_file_node(head);
 }
 
@@ -205,7 +207,14 @@ file_node* parse_manifest(int file){
 		return NULL;
 	}
 	file_node* head = (file_node*)malloc(sizeof(file_node));
-	strcpy(buffer, (strchr(buffer, '\n'))+1);
+	char buffer_tmp[strlen(strchr(buffer, '\n'))+1];
+	strcpy(buffer_tmp, strchr(buffer, '\n')+1);
+	bzero(buffer, strlen(buffer));
+	strcpy(buffer, buffer_tmp);
+	/*char buffer_tmp2[strlen(strchr(buffer, '\n'))+1];
+	strcpy(buffer_tmp2, strchr(buffer, '\n'));
+	bzero(buffer, strlen(buffer));
+	strcpy(buffer, buffer_tmp2);*/
 	if(strchr(buffer, '\n') == NULL){
 		head -> version = -1;
 		head -> path = NULL;
@@ -216,7 +225,7 @@ file_node* parse_manifest(int file){
 		int count = 0;
 		file_node* tmp = head;
 		while(strchr(buffer, '\n') != NULL){
-			char* token = malloc(strchr(buffer, '\n')-buffer+1);	
+			char* token = malloc(strchr(buffer, '\n')-buffer+1);
 			if(count%3 == 0){
 				get_token(buffer, token, ' ');
 				tmp -> version = atoi(token);
@@ -245,12 +254,14 @@ file_node* parse_manifest(int file){
 void get_token(char* message, char* token, char delimeter){
 	char copy[strlen(message)+1];
 	strcpy(copy, message);
-	char* cut = strchr(copy, delimeter);
-	*cut = '\0';
+	copy[strchr(message, delimeter)-message] = '\0';
 	int i;
 	for(i = 0; i <= strlen(copy); i++)
 		token[i] = copy[i];
-	strcpy(message, strchr(message, delimeter)+1);
+	char message_tmp[strlen(strchr(message, delimeter))+1];
+	strcpy(message_tmp, strchr(message, delimeter)+1);
+	bzero(message, strlen(message));
+	strcpy(message, message_tmp);
 }
 
 int get_manifest_version(char* manifest_path){

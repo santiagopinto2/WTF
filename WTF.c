@@ -26,7 +26,7 @@ typedef struct update_nodes{
 	char action;
 	char* path;
 	struct update_nodes* next;
-}update_node;
+} update_node;
 
 void configure(char* string_ip, char* string_port);
 void checkout(int network_socket, char* project_name);
@@ -34,6 +34,8 @@ void update(int network_socket, char* project_name);
 void update_write(int file, char c, char* path, char* hash, int* has_update);
 void upgrade(int network_socket, char* project_name);
 update_node* parse_update(int file);
+void create(int network_socket, char* project_name);
+void destroy(int network_socket, char* project_name);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
 void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head);
@@ -98,6 +100,11 @@ int main(int argc, char** argv){
 			update(network_socket, argv[2]);
 		else if(strcmp(argv[1], "upgrade") == 0)
 			upgrade(network_socket, argv[2]);
+		else if(strcmp(argv[1], "create") == 0)
+			create(network_socket, argv[2]);
+		else if(strcmp(argv[1], "destroy") == 0)
+			destroy(network_socket, argv[2]);
+		
 		
 		/*
 		 * 
@@ -433,13 +440,12 @@ void upgrade(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
-	int manifest_version;
 	if(strstr(message, "Project folder not found") != NULL){
 		printf("Project folder not found server side\n");
 		return;
 	}
-	else
-		manifest_version = atoi(message);
+	int manifest_version;
+	manifest_version = atoi(message);
 	update_node* update_head = parse_update(update_file);
 	close(update_file);
 	if(update_head -> action == 'Z'){
@@ -584,6 +590,53 @@ update_node* parse_update(int file){
 		count++;
 	}
 	return head;
+}
+
+void create(int network_socket, char* project_name){
+	char buffer[strlen(project_name)+8];
+	strcpy(buffer, "create:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[200];
+	bzero(message, sizeof(message));
+	int bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strstr(message, "Project folder already exists") != NULL){
+		printf("Project folder already exists server side\n");
+		return;
+	}
+	printf("Creating project...\n");
+	char manifest_version_string[strlen(message)+1];
+	strcpy(manifest_version_string, message);
+	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, "Manifest");
+	int manifest_file = creat(manifest_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	write(manifest_file, manifest_version_string, strlen(manifest_version_string));
+	write(manifest_file, "\n", 1);
+	close(manifest_file);
+	printf("Finished creating project\n");
+}
+
+void destroy(int network_socket, char* project_name){
+	char buffer[strlen(project_name)+9];
+	strcpy(buffer, "destroy:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[200];
+	bzero(message, sizeof(message));
+	int bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strstr(message, "Project folder not found") != NULL)
+		printf("Project folder not found server side\n");
+	else
+		printf("Project destroyed\n");
 }
 
 void get_path(char* path, char* project_name, char* extension){

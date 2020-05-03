@@ -25,6 +25,9 @@ typedef struct file_nodes{
 void* handle_connection(void* p_client_socket);
 void get_message(int client_socket, char* project_name, int file_full, char* looking_for);
 void upgrade(int client_socket, char* project_name);
+void create(int client_socket, char* project_name);
+void destroy(int client_socket, char* project_name);
+int destroy_helper(char* project_name);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
 void get_token(char* message, char* token, char delimeter);
@@ -84,6 +87,10 @@ void* handle_connection(void* p_client_socket){
 		get_message(client_socket, strchr(buffer, ':')+1, 0, "Manifest");
 	else if(strstr(buffer, "upgrade") != NULL)
 		upgrade(client_socket, strchr(buffer, ':')+1);
+	else if(strstr(buffer, "create") != NULL)
+		create(client_socket, strchr(buffer, ':')+1);
+	else if(strstr(buffer, "destroy") != NULL)
+		destroy(client_socket, strchr(buffer, ':')+1);
 		
 		
 		
@@ -251,6 +258,70 @@ void upgrade(int client_socket, char* project_name){
 		write(client_socket, message, strlen(message));
 		close(file_tmp);
 	}
+}
+
+void create(int client_socket, char* project_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) != -1){
+		printf("Project folder already exists\n");
+		write(client_socket, "Project folder already exists", sizeof("Project folder already exists"));
+		return;
+	}
+	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, "Manifest");
+	int manifest_file = creat(manifest_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	write(manifest_file, "1\n", 2);
+	write(client_socket, "1", 1);
+	close(manifest_file);
+	printf("Project created\n");
+}
+
+void destroy(int client_socket, char* project_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project folder not found\n");
+		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
+		return;
+	}
+	write(client_socket, "Project destroyed", sizeof("Project destroyed"));
+	int destroy_helper_result = destroy_helper(project_name);
+	printf("Project destroyed\n");
+}
+
+int destroy_helper(char* project_name){
+    DIR* d = opendir(project_name);
+    size_t path_len = strlen(project_name);
+    int r = -1;
+    if (d){
+       struct dirent *p;
+       r = 0;
+       while (!r && (p=readdir(d))) {
+           int r2 = -1;
+           char* buf;
+           size_t len;
+           if (strcmp(p->d_name, ".") == 0 || strcmp(p->d_name, "..") == 0)
+              continue;
+           len = path_len + strlen(p->d_name) + 2; 
+           buf = malloc(len);
+           if (buf){
+              struct stat statbuf;
+              snprintf(buf, len, "%s/%s", project_name, p->d_name);
+              if(!stat(buf, &statbuf)) {
+                 if(S_ISDIR(statbuf.st_mode))
+                    r2 = destroy_helper(buf);
+                 else
+                    r2 = unlink(buf);
+              }
+              free(buf);
+           }
+           r = r2;
+       }
+       closedir(d);
+    }
+    if (!r)
+       r = rmdir(project_name);
+    return r;
 }
 
 void get_path(char* path, char* project_name, char* extension){

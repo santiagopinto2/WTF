@@ -242,7 +242,9 @@ void upgrade(int client_socket, char* project_name){
 		if(bytes_read == -1 || strcmp(buffer, "Upgrade done") == 0 || (file_tmp = open(buffer, O_RDONLY)) == -1){
 			if(bytes_read == -1)
 				printf("Read failed\n");
-			else if((file_tmp = open(buffer, O_RDONLY)) == -1 && !(strcmp(buffer, "Upgrade done") == 0))
+			else if(strcmp(buffer, "Upgrade done") == 0)
+				printf("Upgrade finished\n");
+			else if((file_tmp = open(buffer, O_RDONLY)) == -1)
 				printf("File not found\n");
 			free_file_node(head);
 			return;

@@ -144,6 +144,7 @@ void configure(char* string_ip, char* string_port){
 	write_int = write(ip_port_file, string_ip, strlen(string_ip));
 	write_int = write(ip_port_file, "\n", 1);
 	write_int = write(ip_port_file, string_port, strlen(string_port));
+	printf("Configure finished\n");
 }
 
 void checkout(int network_socket, char* project_name){

@@ -36,8 +36,11 @@ void upgrade(int network_socket, char* project_name);
 update_node* parse_update(int file);
 void create(int network_socket, char* project_name);
 void destroy(int network_socket, char* project_name);
+void add(char* project_name, char* file_name);
+void remove_func(char* project_name, char* file_name);
+void currentversion(int network_socket, char* project_name);
 void get_path(char* path, char* project_name, char* extension);
-file_node* parse_manifest(int file);
+file_node* parse_manifest(char* manifest_path);
 void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head);
 file_node* parse_message(char* message);
 void get_token(char* message, char* token, char delimeter);
@@ -50,7 +53,11 @@ void free_update_node(update_node* head);
 int main(int argc, char** argv){
 	if(strcmp(argv[1], "configure") == 0)
 		configure(argv[2], argv[3]);
-	else{		
+	else if(strcmp(argv[1], "add") == 0)
+		add(argv[2], argv[3]);
+	else if(strcmp(argv[1], "remove") == 0)
+		remove_func(argv[2], argv[3]);
+	else{
 		int ip_port_file=open("ip_port.configure", O_RDONLY);
 		if(ip_port_file == -1){
 			printf("Configure file not found\n");
@@ -104,6 +111,8 @@ int main(int argc, char** argv){
 			create(network_socket, argv[2]);
 		else if(strcmp(argv[1], "destroy") == 0)
 			destroy(network_socket, argv[2]);
+		else if(strcmp(argv[1], "currentversion") == 0)
+			currentversion(network_socket, argv[2]);
 		
 		
 		/*
@@ -150,13 +159,13 @@ void checkout(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
-	if(strstr(message, "Project folder not found") != NULL){
+	if(strcmp(message, "Project folder not found") == 0){
 		printf("Project folder not found server side\n");
 		return;
 	}
 	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	printf("Project received, storing...\n");
-	get_path(buffer, project_name, "Manifest");
+	get_path(buffer, project_name, ".Manifest");
 	int manifest_file = creat(buffer, S_IRWXG|S_IRWXO|S_IRWXU);
 	//the message that will be sent over will be in this format
 	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashlength of file:filefile version...
@@ -232,14 +241,14 @@ void checkout(int network_socket, char* project_name){
 
 void update(int network_socket, char* project_name){
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	int manifest_file, bytes_read, i, has_conflict = 0, has_update = 0;
 	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Client manifest not found\n");
 		return;
 	}
-	file_node* client_head = parse_manifest(manifest_file);
 	close(manifest_file);
+	file_node* client_head = parse_manifest(manifest_path);
 	char buffer[strlen(project_name)+8];
 	strcpy(buffer, "update:");
 	strcat(buffer, project_name);
@@ -257,15 +266,15 @@ void update(int network_socket, char* project_name){
 		free_file_node(client_head);
 		return;
 	}
-	if(strstr(message, "Project folder not found") != NULL){
+	if(strcmp(message, "Project folder not found") == 0){
 		printf("Project folder not found server side\n");
 		return;
 	}
 	char* update_file_path = malloc(strlen(project_name)*2+9);
-	get_path(update_file_path, project_name, "Update");
+	get_path(update_file_path, project_name, ".Update");
 	int update_file = creat(update_file_path, S_IRWXG|S_IRWXO|S_IRWXU);
 	char* conflict_file_path = malloc(strlen(project_name)*2+11);
-	get_path(conflict_file_path, project_name, "Conflict");
+	get_path(conflict_file_path, project_name, ".Conflict");
 	//the message that will be sent over will be in this format
 	//manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
 	char* manifest_version_string = malloc(strchr(message, ':')-message+1);
@@ -415,13 +424,13 @@ void upgrade(int network_socket, char* project_name){
 		return;
 	}
 	char conflict_path[strlen(project_name)*2+11];
-	get_path(conflict_path, project_name, "Conflict");
+	get_path(conflict_path, project_name, ".Conflict");
 	if(stat(conflict_path, &st) != -1){
 		printf("Conflict file found, first resolve all conflicts and then update again\n");
 		return;
 	}
 	char update_path[strlen(project_name)*2+9];
-	get_path(update_path, project_name, "Update");
+	get_path(update_path, project_name, ".Update");
 	int update_file;
 	if((update_file = open(update_path, O_RDONLY)) == -1){
 		printf("Update file not found, first perform an update\n");
@@ -440,7 +449,7 @@ void upgrade(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
-	if(strstr(message, "Project folder not found") != NULL){
+	if(strcmp(message, "Project folder not found") == 0){
 		printf("Project folder not found server side\n");
 		return;
 	}
@@ -455,14 +464,14 @@ void upgrade(int network_socket, char* project_name){
 	}
 	printf("Starting update changes...\n");
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	int manifest_file;
 	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Client manifest not found\n");
 		return;
 	}
-	file_node* manifest_head = parse_manifest(manifest_file);
-	close(manifest_file);	
+	close(manifest_file);
+	file_node* manifest_head = parse_manifest(manifest_path);
 	update_node* update_tmp = update_head;
 	char buffer2;
 	while(update_tmp != NULL){
@@ -613,7 +622,7 @@ void create(int network_socket, char* project_name){
 	strcpy(manifest_version_string, message);
 	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	int manifest_file = creat(manifest_path, S_IRWXG|S_IRWXO|S_IRWXU);
 	write(manifest_file, manifest_version_string, strlen(manifest_version_string));
 	write(manifest_file, "\n", 1);
@@ -633,21 +642,180 @@ void destroy(int network_socket, char* project_name){
 		printf("Read failed\n");
 		return;
 	}
-	if(strstr(message, "Project folder not found") != NULL)
+	if(strcmp(message, "Project folder not found") == 0)
 		printf("Project folder not found server side\n");
 	else
 		printf("Project destroyed\n");
+}
+
+void add(char* project_name, char* file_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project folder not found\n");
+		return;
+	}
+	char file_path[strlen(project_name)+strlen(file_name)+2];
+	strcpy(file_path, project_name);
+	strcat(file_path, "/");
+	strcat(file_path, file_name);
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, ".Manifest");
+	int file, manifest_file, i;
+	if((file = open(file_path, O_RDONLY)) == -1){
+		printf("File not found\n");
+		return;
+	}
+	if((manifest_file = open(manifest_path, O_RDWR | O_APPEND)) == -1){
+		printf("Client manifest not found\n");
+		return;
+	}
+	char manifest_message[10000];
+	bzero(manifest_message, sizeof(manifest_message));
+	read(manifest_file, manifest_message, sizeof(manifest_message));
+	if(strstr(manifest_message, file_path) != NULL){
+		close(file);
+		close(manifest_file);
+		printf("File already exists in manifest\n");
+		return;
+	}
+	char message[10000];
+	bzero(message, sizeof(message));
+	read(file, message, sizeof(message));
+	unsigned char* buf = malloc(SHA_DIGEST_LENGTH);
+	bzero(buf, sizeof(buf));
+	char* file_hash = malloc(SHA_DIGEST_LENGTH*2);
+	SHA1(message, strlen(message), buf);
+	file_hash[strlen(file_hash)-1] = '\0';
+	for (i = 0; i < SHA_DIGEST_LENGTH; i++)
+		sprintf((char*)&(file_hash[i*2]), "%02x", buf[i]);
+	write(manifest_file, "1 ", 2);
+	write(manifest_file, file_path, strlen(file_path));
+	write(manifest_file, " ", 1);
+	write(manifest_file, file_hash, strlen(file_hash));
+	write(manifest_file, "\n", 1);
+	close(file);
+	close(manifest_file);
+	printf("File added to manifest\n");
+}
+
+void remove_func(char* project_name, char* file_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project folder not found\n");
+		return;
+	}
+	char file_path[strlen(project_name)+strlen(file_name)+2];
+	strcpy(file_path, project_name);
+	strcat(file_path, "/");
+	strcat(file_path, file_name);
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, ".Manifest");
+	int file, manifest_file;
+	if((file = open(file_path, O_RDONLY)) == -1){
+		printf("File not found\n");
+		return;
+	}
+	if((manifest_file = open(manifest_path, O_RDONLY)) == -1){
+		printf("Client manifest not found\n");
+		return;
+	}
+	char manifest_message[10000];
+	bzero(manifest_message, sizeof(manifest_message));
+	read(manifest_file, manifest_message, sizeof(manifest_message));
+	if(strstr(manifest_message, file_path) == NULL){
+		close(file);
+		close(manifest_file);
+		printf("File not found in manifest\n");
+		return;
+	}
+	close(manifest_file);
+	file_node* head = parse_manifest(manifest_path);
+	if(strcmp(head -> path, file_path) == 0)
+		head = head -> next;
+	else{
+		file_node* tmp = head;
+		while(strcmp(tmp -> next -> path, file_path) != 0)
+			tmp = tmp -> next;
+		tmp -> next = tmp -> next -> next;
+	}
+	parse_manifest_nodes(manifest_path, get_manifest_version(manifest_path), head);
+	close(file);
+	close(manifest_file);
+	free_file_node(head);
+	printf("File removed from manifest\n");
+}
+
+void currentversion(int network_socket, char* project_name){
+	char buffer[strlen(project_name)+16];
+	strcpy(buffer, "currentversion:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[10000];
+	bzero(message, sizeof(message));
+	int bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strcmp(message, "Project folder not found") == 0){
+		printf("Project folder not found server side\n");
+		return;
+	}
+	printf("Printing project...\n");
+	char manifest_version[strchr(message, ':')-message+1];
+	get_token(message, manifest_version, ':');
+	printf("Manifest version: %s\n", manifest_version);
+	if(strlen(message) == 1){
+		printf("Finished printing project\n");
+		return;
+	}
+	char file_list_length_string[strchr(message, ':')-message+1];
+	get_token(message, file_list_length_string, ':');
+	int file_list_length = atoi(file_list_length_string);
+	int i, j;
+	//the message that will be sent over will be in this format
+	//manifest version:# of files:file version:length of file path:file pathfile version...
+	for(i = 1; i <= file_list_length; i++){
+		char file_version[strchr(message, ':')-message+1];
+		get_token(message, file_version, ':');
+		char file_path_length_string[strchr(message, ':')-message+1];
+		get_token(message, file_path_length_string, ':');
+		int file_path_length = atoi(file_path_length_string);
+		if(i == file_list_length){
+			char short_file_path[strlen(message)-strlen(project_name)];
+			get_token(message, short_file_path, '/');
+			printf("File: %s version %s\n", message, file_version);
+			printf("Finished printing project\n");
+			return;
+		}
+		char file_path_and_file_version[strchr(message, ':')-message+1];
+		for(j = 0; message[j] != ':'; j++)
+			file_path_and_file_version[j] = message[j];
+		file_path_and_file_version[strchr(message, ':')-message] = '\0';
+		char file_path[file_path_length];
+		strncpy(file_path, file_path_and_file_version, file_path_length);
+		file_path[file_path_length] = '\0';
+		char tmp[strlen(message)+1];
+		bzero(tmp, sizeof(tmp));
+		for(j = file_path_length; j < strlen(message); j++)
+			tmp[j-file_path_length] = message[j];
+		bzero(message, strlen(message));
+		strcpy(message, tmp);
+		char short_file_path[strlen(file_path)-strlen(project_name)];
+		get_token(file_path, short_file_path, '/');
+		printf("File: %s version %s\n", file_path, file_version);
+	}
 }
 
 void get_path(char* path, char* project_name, char* extension){
 	strcpy(path, project_name);
 	strcat(path, "/");
 	strcat(path, project_name);
-	strcat(path, ".");
 	strcat(path, extension);
 }
 
-file_node* parse_manifest(int file){
+file_node* parse_manifest(char* manifest_path){
+	int file = open(manifest_path, O_RDONLY);
 	char* buffer = malloc(10000);
 	bzero(buffer, sizeof(buffer));
 	int bytes_read, i = 0;
@@ -657,6 +825,7 @@ file_node* parse_manifest(int file){
 		i++;
 	}
 	if(bytes_read == -1){
+		close(file);
 		printf("Read failed\n");
 		return NULL;
 	}
@@ -699,6 +868,7 @@ file_node* parse_manifest(int file){
 		}
 		count++;
 	}
+	close(file);
 	return head;
 }
 

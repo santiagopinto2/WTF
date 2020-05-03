@@ -91,6 +91,8 @@ void* handle_connection(void* p_client_socket){
 		create(client_socket, strchr(buffer, ':')+1);
 	else if(strstr(buffer, "destroy") != NULL)
 		destroy(client_socket, strchr(buffer, ':')+1);
+	else if(strstr(buffer, "currentversion") != NULL)
+		get_message(client_socket, strchr(buffer, ':')+1, -1, "Manifest");
 		
 		
 		
@@ -116,7 +118,7 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 	}
 	close(file);
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	if((file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Manifest not found\n");
 		return;
@@ -135,6 +137,10 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 	 * if just manifest is requested (file_full == 0) then
 	 * the message that will be sent over will be in this format
 	 * manifest version:# of files:file version:length of file path:file pathlength of hash:hashfile version...
+	 * 
+	 * if just file paths and versions are requested (file_full == -1) then
+	 * the message that will be sent over will be in this format
+	 * manifest version:# of files:file version:length of file path:file pathfile version...
 	 * */
 	char message[1000000];
 	bzero(message, sizeof(message));
@@ -164,12 +170,14 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 		strcat(message, string4);
 		strcat(message, ":");
 		strcat(message, tmp -> path);
-		char string5[get_int_length(hash_length)+1];
-		sprintf(string5, "%d", hash_length);
-		strcat(message, string5);
-		strcat(message, ":");
-		strcat(message, tmp -> hash);
-		if(file_full){
+		if(file_full != -1){
+			char string5[get_int_length(hash_length)+1];
+			sprintf(string5, "%d", hash_length);
+			strcat(message, string5);
+			strcat(message, ":");
+			strcat(message, tmp -> hash);
+		}
+		if(file_full == 1){
 			if((file = open(tmp -> path, O_RDONLY)) == -1){
 				printf("File not found\n");
 				return;
@@ -201,7 +209,7 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 void upgrade(int client_socket, char* project_name){
 	int file, manifest_file;
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	if((file = open(project_name, O_RDONLY)) == -1){
 		printf("Project folder not found\n");
 		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
@@ -269,7 +277,7 @@ void create(int client_socket, char* project_name){
 	}
 	mkdir(project_name, S_IRWXG|S_IRWXO|S_IRWXU);
 	char manifest_path[strlen(project_name)*2+11];
-	get_path(manifest_path, project_name, "Manifest");
+	get_path(manifest_path, project_name, ".Manifest");
 	int manifest_file = creat(manifest_path, S_IRWXG|S_IRWXO|S_IRWXU);
 	write(manifest_file, "1\n", 2);
 	write(client_socket, "1", 1);
@@ -328,7 +336,6 @@ void get_path(char* path, char* project_name, char* extension){
 	strcpy(path, project_name);
 	strcat(path, "/");
 	strcat(path, project_name);
-	strcat(path, ".");
 	strcat(path, extension);
 }
 

@@ -39,6 +39,8 @@ void destroy(int network_socket, char* project_name);
 void add(char* project_name, char* file_name);
 void remove_func(char* project_name, char* file_name);
 void currentversion(int network_socket, char* project_name);
+void history(int network_socket, char* project_name);
+void rollback(int network_socket, char* project_name, char* version);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(char* manifest_path);
 void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head);
@@ -113,6 +115,10 @@ int main(int argc, char** argv){
 			destroy(network_socket, argv[2]);
 		else if(strcmp(argv[1], "currentversion") == 0)
 			currentversion(network_socket, argv[2]);
+		else if(strcmp(argv[1], "history") == 0)
+			history(network_socket, argv[2]);
+		else if(strcmp(argv[1], "rollback") == 0)
+			rollback(network_socket, argv[2], argv[3]);
 		
 		
 		/*
@@ -122,7 +128,6 @@ int main(int argc, char** argv){
 		 * 
 		 * 
 		 * */
-		
 		
 		
 		
@@ -805,6 +810,49 @@ void currentversion(int network_socket, char* project_name){
 		get_token(file_path, short_file_path, '/');
 		printf("File: %s version %s\n", file_path, file_version);
 	}
+}
+
+void history(int network_socket, char* project_name){
+	char buffer[strlen(project_name)+9];
+	strcpy(buffer, "history:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[10000];
+	bzero(message, sizeof(message));
+	int bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strcmp(message, "Project folder not found") == 0){
+		printf("Project folder not found server side\n");
+		return;
+	}
+	printf("Printing history...\n\n");
+	printf("%s", message);
+	printf("Finished printing history\n");
+}
+
+void rollback(int network_socket, char* project_name, char* version){
+	char buffer[strlen(project_name)+strlen(version)+11];
+	strcpy(buffer, "rollback:");
+	strcat(buffer, project_name);
+	strcat(buffer, ":");
+	strcat(buffer, version);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[50];
+	bzero(message, sizeof(message));
+	int bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strcmp(message, "Project folder not found") == 0)
+		printf("Project folder not found server side\n");
+	else if(strcmp(message, "Project folder with given version not found") == 0)
+		printf("Project folder with given version not found server side\n");
+	else if(strcmp(message, "Project was reverted") == 0)
+		printf("Project was reverted\n");
 }
 
 void get_path(char* path, char* project_name, char* extension){

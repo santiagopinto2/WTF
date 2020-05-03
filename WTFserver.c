@@ -27,13 +27,15 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 void upgrade(int client_socket, char* project_name);
 void create(int client_socket, char* project_name);
 void destroy(int client_socket, char* project_name);
-int destroy_helper(char* project_name);
+void history(int client_socket, char* project_name);
+void rollback(int client_socket, char* project_name_and_version);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(int file);
 void get_token(char* message, char* token, char delimeter);
 int get_manifest_version(char* manifest_path);
 int get_int_length(int num);
 int get_file_list_length(file_node* head);
+int delete_directory(char* project_name);
 void free_file_node(file_node* head);
 
 int main(int argc, char** argv){
@@ -93,6 +95,10 @@ void* handle_connection(void* p_client_socket){
 		destroy(client_socket, strchr(buffer, ':')+1);
 	else if(strstr(buffer, "currentversion") != NULL)
 		get_message(client_socket, strchr(buffer, ':')+1, -1, "Manifest");
+	else if(strstr(buffer, "history") != NULL)
+		history(client_socket, strchr(buffer, ':')+1);
+	else if(strstr(buffer, "rollback") != NULL)
+		rollback(client_socket, strchr(buffer, ':')+1);
 		
 		
 		
@@ -282,6 +288,11 @@ void create(int client_socket, char* project_name){
 	write(manifest_file, "1\n", 2);
 	write(client_socket, "1", 1);
 	close(manifest_file);
+	char history_path[strlen(project_name)*2+10];
+	get_path(history_path, project_name, ".History");
+	int history_file = creat(history_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	write(history_file, "Project created\n", strlen("Project created\n"));
+	close(history_file);
 	printf("Project created\n");
 }
 
@@ -293,43 +304,68 @@ void destroy(int client_socket, char* project_name){
 		return;
 	}
 	write(client_socket, "Project destroyed", sizeof("Project destroyed"));
-	int destroy_helper_result = destroy_helper(project_name);
+	int delete_directory_result = delete_directory(project_name);
 	printf("Project destroyed\n");
 }
 
-int destroy_helper(char* project_name){
-    DIR* d = opendir(project_name);
-    size_t path_len = strlen(project_name);
-    int r = -1;
-    if (d){
-       struct dirent *p;
-       r = 0;
-       while (!r && (p=readdir(d))) {
-           int r2 = -1;
-           char* buf;
-           size_t len;
-           if (strcmp(p->d_name, ".") == 0 || strcmp(p->d_name, "..") == 0)
-              continue;
-           len = path_len + strlen(p->d_name) + 2; 
-           buf = malloc(len);
-           if (buf){
-              struct stat statbuf;
-              snprintf(buf, len, "%s/%s", project_name, p->d_name);
-              if(!stat(buf, &statbuf)) {
-                 if(S_ISDIR(statbuf.st_mode))
-                    r2 = destroy_helper(buf);
-                 else
-                    r2 = unlink(buf);
-              }
-              free(buf);
-           }
-           r = r2;
-       }
-       closedir(d);
-    }
-    if (!r)
-       r = rmdir(project_name);
-    return r;
+void history(int client_socket, char* project_name){
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project folder not found\n");
+		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
+		return;
+	}
+	char history_path[strlen(project_name)*2+10];
+	get_path(history_path, project_name, ".History");
+	int history_file;
+	if((history_file = open(history_path, O_RDONLY)) == -1){
+		printf("History not found\n");
+		return;
+	}
+	char buffer[10000];
+	bzero(buffer, sizeof(buffer));
+	int bytes_read = read(history_file, buffer, sizeof(buffer));
+	write(client_socket, buffer, strlen(buffer));
+	printf("History sent\n");
+}
+
+void rollback(int client_socket, char* project_name_and_version){
+	struct stat st = {0};
+	if(stat(project_name_and_version, &st) == -1){
+		printf("Project folder with given version not found\n");
+		write(client_socket, "Project folder with given version not found", sizeof("Project folder with given version not found"));
+		return;
+	}
+	char project_name_and_version_copy[strlen(project_name_and_version)+1];
+	strcpy(project_name_and_version_copy, project_name_and_version);
+	char project_name[strchr(project_name_and_version, ':')-project_name_and_version+1];
+	get_token(project_name_and_version, project_name, ':');
+	int version = atoi(project_name_and_version);
+	if(stat(project_name, &st) == -1){
+		printf("Project folder not found\n");
+		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
+		return;
+	}
+	delete_directory(project_name);
+	char name_tmp[100];
+	struct dirent* p;
+	DIR* d = opendir("./");
+	while ((p = readdir(d)) != NULL){
+		if(strchr(p -> d_name, ':') != NULL){
+			bzero(name_tmp, sizeof(name_tmp));
+			strcpy(name_tmp, p -> d_name);
+			char project_name_tmp[strchr(name_tmp, ':')-name_tmp];
+			get_token(name_tmp, project_name_tmp, ':');
+			int version_tmp = atoi(name_tmp);
+			if(version_tmp > version)
+				delete_directory(p -> d_name);
+		}
+		
+	}
+	closedir(d);
+	rename(project_name_and_version_copy, project_name);
+	write(client_socket, "Project was reverted", sizeof("Project was reverted"));
+	printf("Project was reverted\n");
 }
 
 void get_path(char* path, char* project_name, char* extension){
@@ -437,6 +473,41 @@ int get_file_list_length(file_node* head){
 		tmp = tmp -> next;
 	}
 	return count;
+}
+
+int delete_directory(char* project_name){
+    DIR* d = opendir(project_name);
+    size_t path_len = strlen(project_name);
+    int r = -1;
+    if (d){
+       struct dirent* p;
+       r = 0;
+       while (!r && (p = readdir(d))) {
+           int r2 = -1;
+           char* buf;
+           size_t len;
+           if (strcmp(p->d_name, ".") == 0 || strcmp(p->d_name, "..") == 0)
+              continue;
+           len = path_len + strlen(p->d_name) + 2; 
+           buf = malloc(len);
+           if (buf){
+              struct stat statbuf;
+              snprintf(buf, len, "%s/%s", project_name, p->d_name);
+              if(!stat(buf, &statbuf)) {
+                 if(S_ISDIR(statbuf.st_mode))
+                    r2 = delete_directory(buf);
+                 else
+                    r2 = unlink(buf);
+              }
+              free(buf);
+           }
+           r = r2;
+       }
+       closedir(d);
+    }
+    if (!r)
+       r = rmdir(project_name);
+    return r;
 }
 
 void free_file_node(file_node* head){

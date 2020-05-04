@@ -99,7 +99,8 @@ void* handle_connection(void* p_client_socket){
 		history(client_socket, strchr(buffer, ':')+1);
 	else if(strstr(buffer, "rollback") != NULL)
 		rollback(client_socket, strchr(buffer, ':')+1);
-		
+	else if(strstr(buffer, "commit") != NULL)
+		get_message(client_socket, strchr(buffer, ':')+1, 0, "Manifest");
 		
 		
 	/*

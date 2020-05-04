@@ -41,6 +41,7 @@ void remove_func(char* project_name, char* file_name);
 void currentversion(int network_socket, char* project_name);
 void history(int network_socket, char* project_name);
 void rollback(int network_socket, char* project_name, char* version);
+void commit(int network_socket, char* project_name);
 void get_path(char* path, char* project_name, char* extension);
 file_node* parse_manifest(char* manifest_path);
 void parse_manifest_nodes(char* manifest_path, int manifest_version, file_node* head);
@@ -119,6 +120,8 @@ int main(int argc, char** argv){
 			history(network_socket, argv[2]);
 		else if(strcmp(argv[1], "rollback") == 0)
 			rollback(network_socket, argv[2], argv[3]);
+		else if (strcmp(argv[1], "commit") == 0)
+			commit(network_socket, argv[2]);
 		
 		
 		/*
@@ -854,6 +857,60 @@ void rollback(int network_socket, char* project_name, char* version){
 		printf("Project folder with given version not found server side\n");
 	else if(strcmp(message, "Project was reverted") == 0)
 		printf("Project was reverted\n");
+}
+
+void commit(int network_socket, char* project_name){
+	
+	struct stat st = {0};
+	if(stat(project_name, &st) == -1){
+		printf("Project not found\n");
+		return;
+	}
+	
+	char buffer[strlen(project_name)+8];
+	strcpy(buffer, "commit:");
+	strcat(buffer, project_name);
+	write(network_socket, buffer, sizeof(buffer));
+	char message[1000];
+	bzero(message, sizeof(message));
+	int i = 0, bytes_read;
+	bytes_read = read(network_socket, message, sizeof(message));
+	if(bytes_read == -1){
+		printf("Read failed\n");
+		return;
+	}
+	if(strstr(message, "Project folder not found") != NULL){
+		printf("Project folder not found server side\n");
+		return;
+	}
+	
+	printf("%s\n", message);
+	
+	char conflict_path[strlen(project_name)*2+11];
+	get_path(conflict_path, project_name, "Conflict");
+	if(stat(conflict_path, &st) != -1){
+		printf("Conflict file found, first resolve all conflicts and then update again\n");
+		return;
+	}
+	
+	char update_path[strlen(project_name)*2+9];
+	get_path(update_path, project_name, "Update");
+	int update_file;
+	if((update_file = open(update_path, O_RDONLY)) != -1){
+		char buffertest[1];
+		bytes_read = read(update_file, buffertest, 1);
+		if (bytes_read == -1) {
+			printf("Read Failed\n");
+			close(update_file);
+			return;
+		}
+		if (bytes_read > 0) {
+			printf("Nonempty update file found, make required updates before committing again\n");
+			close(update_file);
+			return;
+		}
+	}
+	
 }
 
 void get_path(char* path, char* project_name, char* extension){

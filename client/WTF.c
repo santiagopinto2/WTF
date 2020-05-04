@@ -884,7 +884,12 @@ void commit(int network_socket, char* project_name){
 		return;
 	}
 	
-	printf("%s\n", message);
+	if (strstr(message, "Manifest not found") != NULL) {
+		printf("Manifest not found\n");
+		return;
+	}
+	
+	//printf("%s\n", message);
 	
 	char conflict_path[strlen(project_name)*2+11];
 	get_path(conflict_path, project_name, "Conflict");
@@ -910,7 +915,149 @@ void commit(int network_socket, char* project_name){
 			return;
 		}
 	}
+	close(update_file);
 	
+	int x = 0;
+	while (message[x] != ':') {
+		x++;
+	}
+	char versionstr[10];
+	bzero(versionstr, 10);
+	strncat(versionstr, message, x);
+	int server_manifest_version = atoi(versionstr);
+	
+	char manifest_path[strlen(project_name)*2+11];
+	get_path(manifest_path, project_name, ".Manifest");
+	int client_manifest_version = get_manifest_version(manifest_path);
+	
+	if (server_manifest_version != client_manifest_version) {
+		printf("Client and server manifest versions do not match, update local repository before committing\n");
+		return;
+	}
+	file_node* server_manifest = parse_message(message);
+	
+	printf("got past here\n");
+	file_node* client_manifest = parse_manifest(manifest_path);
+	
+	file_node* sptr = server_manifest;
+	file_node* cptr = client_manifest;
+	
+	char commit_path[strlen(project_name)*2+11];
+	get_path("./", project_name, ".Commit");
+	int commit_file = creat(commit_path, S_IRWXG|S_IRWXO|S_IRWXU);
+	int write_int;
+	
+	while (cptr != NULL) {//search for modifies and adds
+		sptr = server_manifest;
+		int found = 0;
+		while (sptr != NULL) {
+			if (strcmp(cptr->hash, sptr->hash) == 0) {
+				found = 1;
+				break;
+			}
+			sptr = sptr->next;
+		}
+		if (!found) {
+			char committxt[1000];
+			strcat(committxt, "A ");
+			strcat(committxt, cptr->path);
+			strcat(committxt, " ");
+			strcat(committxt, sptr->hash);
+			strcat(committxt, "\0");
+			write_int = write(commit_file, committxt, strlen(committxt));
+			write_int = write(commit_file, "\n", 1);
+			printf("A %s\n", cptr->path);
+			break;
+		}
+		
+		int file = open(cptr->path, O_RDONLY);
+		char filecontents[10000];
+		bzero(filecontents, sizeof(filecontents));
+		read(file, filecontents, sizeof(filecontents));
+		unsigned char* buf = malloc(SHA_DIGEST_LENGTH);
+		bzero(buf, sizeof(buf));
+		char* file_hash = malloc(SHA_DIGEST_LENGTH*2);
+		SHA1(filecontents, strlen(filecontents), buf);
+		file_hash[strlen(file_hash)-1] = '\0';
+		printf("%s ", buf);
+		for (i = 0; i < SHA_DIGEST_LENGTH; i++)
+			sprintf((char*)&(file_hash[i*2]), "%02x", buf[i]);
+		printf("%s\n", buf);
+		close(file);
+		if (strcmp(cptr->hash, buf) != 0) {
+			if (sptr->version < cptr->version) {
+				char committxt[1000];
+				strcat(committxt, "M ");
+				strcat(committxt, cptr->path);
+				strcat(committxt, " ");
+				strcat(committxt, sptr->hash);
+				strcat(committxt, "\0");
+				write_int = write(commit_file, committxt, strlen(committxt));
+				write_int = write(commit_file, "\n", 1);
+				printf("M %s\n", cptr->path);
+				break;
+			} else {
+				remove(commit_path);
+				printf("Client must update before committing any changes\n");
+				return;
+			}
+		}
+		cptr = cptr->next;
+	}
+	
+	sptr = server_manifest;
+	while (sptr != NULL) {
+		cptr = client_manifest;
+		int found = 0;
+		while(cptr != NULL) {
+			if (strcmp(cptr->hash, sptr->hash) == 0) {
+				found = 1;
+				break;
+			}
+			cptr = cptr->next;
+		}
+		if (!found) {
+			if (sptr->version <= client_manifest_version) {
+				char committxt[1000];
+				strcat(committxt, "D ");
+				strcat(committxt, cptr->path);
+				strcat(committxt, " ");
+				strcat(committxt, sptr->hash);
+				strcat(committxt, "\0");
+				write_int = write(commit_file, committxt, strlen(committxt));
+				write_int = write(commit_file, "\n", 1);
+				printf("D %s\n", cptr->path);
+				break;
+			} else {
+				remove(commit_path);
+				printf("Client must synch with server before committing any changes\n");
+				return;
+			}
+		}
+		sptr = sptr->next;
+	}
+	
+/*	
+//	- compare manifest versions//
+	- run through client manifest and assign hashes
+	- use the live hashes to find changed files
+//	- generate .Commit file//
+	- compare hashes
+		- modify
+			- server and client have the same file
+			- stored hashes are the same
+			- live hash is different from the stored hash
+//		- add//
+//			- file isn't in the server manifest, but it's in the client manifest//
+//		- delete
+//			- server manifest has the file, but client manifest doesn't
+		- output to .Commit file and stdout
+	- if everything follows those rules, send commit file to server
+		- server saves it as an active commit
+		- report success
+//	- if a file is in the server's manifest with a different hash than the client's whose version number is not lower than the client's 
+//		- commit fails with a message stating that the repository has to be synced
+*/
 }
 
 void get_path(char* path, char* project_name, char* extension){

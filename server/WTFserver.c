@@ -48,11 +48,11 @@ int main(int argc, char** argv){
 	server_addr.sin_addr.s_addr = INADDR_ANY;
 	if((bind(server_socket, (struct sockaddr*) &server_addr, sizeof(server_addr))) == -1){
 		printf("Bind failed\n");
-		return;
+		return 0;
 	}
 	if((listen(server_socket, 100)) == -1){
 		printf("Listen failed\n");
-		return;
+		return 0;
 	}
 	int client_socket, client_addr_size;
 	struct sockaddr_in client_addr;
@@ -60,7 +60,7 @@ int main(int argc, char** argv){
 		client_addr_size = sizeof(struct sockaddr_in);
 		if((client_socket = accept(server_socket, (struct sockaddr*) &client_addr, (socklen_t*) &client_addr_size)) == -1){
 			printf("Accept failed\n");
-			return;
+			return 0;
 		}
 		printf("Connected to client\n\n");
 		pthread_t t;
@@ -128,6 +128,7 @@ void get_message(int client_socket, char* project_name, int file_full, char* loo
 	get_path(manifest_path, project_name, ".Manifest");
 	if((file = open(manifest_path, O_RDONLY)) == -1){
 		printf("Manifest not found\n");
+		write(client_socket, "Manifest not found", strlen("Manifest not found"));
 		return;
 	}
 	printf("%s found, sending over...\n\n", looking_for);

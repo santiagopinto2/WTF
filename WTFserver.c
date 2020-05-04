@@ -313,8 +313,21 @@ void destroy(int client_socket, char* project_name){
 		write(client_socket, "Project folder not found", sizeof("Project folder not found"));
 		return;
 	}
+	char project_name2[strlen(project_name)+2];
+	strcpy(project_name2, project_name);
+	strcat(project_name2, ":");
+	char name_tmp[100];
+	struct dirent* p;
+	DIR* d = opendir("./");
+	int delete_directory_result;
+	//opens the directory and deletes all folders in it that are previous versions of the project
+	while ((p = readdir(d)) != NULL){
+		if(strstr(p -> d_name, project_name2) != NULL)
+			delete_directory_result = delete_directory(p -> d_name);
+	}
+	closedir(d);
+	delete_directory_result = delete_directory(project_name); //deletes the current project
 	write(client_socket, "Project destroyed", sizeof("Project destroyed"));
-	int delete_directory_result = delete_directory(project_name);
 	printf("Project destroyed\n");
 }
 

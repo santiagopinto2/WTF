@@ -473,6 +473,7 @@ void upgrade(int network_socket, char* project_name){
 			//for add and modify it needs to compare with the message sent by the server, so it parses throught that message first
 			char buffer[strlen(update_tmp -> path)+1];
 			strcpy(buffer, update_tmp -> path);
+			printf("updatetmp path: %s\n", update_tmp->path);
 			write(network_socket, buffer, strlen(buffer));
 			bzero(message, sizeof(message));
 			bytes_read = read(network_socket, message, sizeof(message));
@@ -806,6 +807,10 @@ void history(int network_socket, char* project_name){
 	}
 	if(strcmp(message, "Project folder not found") == 0){
 		printf("Project folder not found server side\n");
+		return;
+	}
+	if(strcmp(message, "History not found") == 0){
+		printf("History not found server side\n");
 		return;
 	}
 	printf("Printing history...\n\n");

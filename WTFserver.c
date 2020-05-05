@@ -243,6 +243,7 @@ void upgrade(int client_socket, char* project_name){
 	while(1){
 		bzero(buffer, sizeof(buffer));
 		bytes_read = read(client_socket, buffer, sizeof(buffer));
+		printf("buffer: %s\n", buffer);
 		if(bytes_read == -1 || strcmp(buffer, "Upgrade done") == 0 || (file_tmp = open(buffer, O_RDONLY)) == -1){
 			//server receives message to kill the loop once upgrade is finished on the client side
 			if(bytes_read == -1)
@@ -250,7 +251,7 @@ void upgrade(int client_socket, char* project_name){
 			else if(strcmp(buffer, "Upgrade done") == 0)
 				printf("Upgrade finished\n");
 			else if((file_tmp = open(buffer, O_RDONLY)) == -1)
-				printf("File not found\n");
+				printf("File not found: %s\n", buffer);
 			free_file_node(head);
 			return;
 		}
@@ -343,6 +344,7 @@ void history(int client_socket, char* project_name){
 	int history_file;
 	if((history_file = open(history_path, O_RDONLY)) == -1){
 		printf("History not found\n");
+		write(client_socket, "History not found", sizeof("History not found"));
 		return;
 	}
 	char buffer[10000];

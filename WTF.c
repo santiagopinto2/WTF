@@ -473,7 +473,6 @@ void upgrade(int network_socket, char* project_name){
 			//for add and modify it needs to compare with the message sent by the server, so it parses throught that message first
 			char buffer[strlen(update_tmp -> path)+1];
 			strcpy(buffer, update_tmp -> path);
-			printf("updatetmp path: %s\n", update_tmp->path);
 			write(network_socket, buffer, strlen(buffer));
 			bzero(message, sizeof(message));
 			bytes_read = read(network_socket, message, sizeof(message));
@@ -506,21 +505,33 @@ void upgrade(int network_socket, char* project_name){
 					manifest_tmp -> next = new_file_node;
 				}
 				else{
-					while(manifest_tmp -> next != NULL){
-						if(strcmp(manifest_tmp -> next -> path, file_next_path) == 0){
-							new_file_node -> next = manifest_tmp -> next;
-							manifest_tmp -> next = new_file_node;
-							break;
-						}
+					if(strcmp(manifest_head -> path, file_next_path) == 0){
+						new_file_node -> next = manifest_head;
+						manifest_head = new_file_node;
+					}
+					else{
+						while(manifest_tmp -> next != NULL){
+							if(strcmp(manifest_tmp -> next -> path, file_next_path) == 0){
+								new_file_node -> next = manifest_tmp -> next;
+								manifest_tmp -> next = new_file_node;
+								break;
+							}
 						manifest_tmp = manifest_tmp -> next;
+						}
 					}
 				}
 			}
 			else if(update_tmp -> action == 'M'){
-				while(strcmp(manifest_tmp -> next -> path, update_tmp -> path) != 0)
-					manifest_tmp = manifest_tmp -> next;
-				new_file_node -> next = manifest_tmp -> next -> next;
-				manifest_tmp -> next = new_file_node;
+				if(strcmp(manifest_head -> path, update_tmp -> path) == 0){
+					new_file_node -> next = manifest_head -> next;
+					manifest_head = new_file_node;
+				}
+				else{
+					while(strcmp(manifest_tmp -> next -> path, update_tmp -> path) != 0)
+						manifest_tmp = manifest_tmp -> next;
+					new_file_node -> next = manifest_tmp -> next -> next;
+					manifest_tmp -> next = new_file_node;
+				}
 			}
 			close(file_tmp);
 		}

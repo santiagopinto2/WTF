@@ -1,0 +1,253 @@
+Configure: The local ip of 127.0.0.1 was used along with any high port number since they are generally not utilized by other programs, such as 9001. It creates a file called ip_port.configure that is just
+
+127.0.0.1
+9001
+
+
+
+
+
+Checkout: Server is has a project called "abc" formatted as
+
++ abc
+|
+| def.txt
+|
+| ghi
+|
+| abc.History
+|
+| + jkl 
+  |
+  | mno.txt
+
+Client creates the exact same folder except that the history file is not passed on. The contents of each file stays the same.
+
+
+
+
+
+Update: Both client and server have a project “abc” formatted as (the contents of the files are written next to them)
+
++ abc
+|
+| def        def
+|
+| ghi        ghi
+
+The manifests which are the same are as follows
+
+66
+2 abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+
+When they are both the same it displays “Up to date” and the .Update file is blank.
+Now client’s project is formatted as
+
++ abc
+|
+| def        def
+|
+| ghi        ghi
+|
+| jkl        jkl
+
+With its manifest as
+
+66
+2 abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+5 abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+
+Server’s is formatted as
+
++ abc
+|
+| def        defdef
+|
+| ghi        ghi
+|
+| lmo        lmo
+
+With its manifest as
+
+67
+3 abc/def c1d7c4828d997f0242c30ba192ff5537c8d00902
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+12 abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+The Update file created is
+
+M abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+D abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+A abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+Now when in the same situation but the contents of def in the client are “testtest” then the Update file is deleted and the Conflict file says
+
+C abc/def 51abb9636078defbf888d8457a7c76f85c8f114c
+
+
+
+
+
+Upgrade: When using the same test case from before where the Update file was 
+
+M abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+D abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+A abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+It made the client project folder the same as the server’s. If using the conflict test case then the user is told that “Conflict file found, first resolve all conflicts and then update again”.
+
+
+
+
+
+Create: If the client command is “./WTF create abc” the server creates a folder as
+
++ abc
+|
+| abc.Manifest        1
+|
+| abc.History        Project created
+
+If it tries the same command it will display “Project folder already exists server side”.    
+
+
+
+
+
+Destroy: If the project “abc” is inputted and the folder where server is stores is as 
+
++ Server
+|
+| WTFserver
+|
+| + abc
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+|
+| + abc.1
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+|
+| + abc.2
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+
+Then folders “abc”, “abc.1”, and “abc.2” will be deleted along with all of their contents.
+
+
+
+
+
+Add: If the file “lmo” is being added with the contents “lmo” and the project folder and manifest are currently
+
++ abc
+|
+| def        def
+| 
+| ghi        ghi
+|
+| jkl        jkl
+
+66
+2 abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+5 abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+
+Then the new manifest will be
+
+66
+2 abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+5 abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+1 abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+
+
+
+
+Remove: Using the new manifest from just now, removing “lmo” will make it return to what it used to be.
+
+
+
+
+
+Current Version: If the manifest is
+
+66
+2 abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+5 abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+8 abc/ghi 257bdf88ee3a7f7fbf8fd131a29184bd6eec6003
+1 abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+Then it will print
+
+Manifest version: 66
+File: def version 2
+File: jkl version 5
+File: ghi version 8
+File: lmo version 1
+
+To standard out.
+
+
+
+
+
+History: If the project “abc” is inputted and it contains the file “abc.History” which has written in it
+
+Project Created
+M abc/def 7b18d017f89f61cf17d47f92749ea6930a3f1deb
+D abc/jkl 1b3ff612e563fc82adc9c375fb25fdf75818da34
+A abc/lmo ecee8ab61a37d703bfdc1845ceb86e13e16396c8
+
+Then the same content will be displayed to the client in standard out. If no history file exists then “History not found server side” will be displayed.
+
+
+
+
+Rollback: If the directory where the server is stored is as
+
++ Server
+|
+| WTFserver
+|
+| + abc
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+|
+| + abc.1
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+|
+| + abc.2
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+
+And it rolls back to version 1, then it will become
+
++ Server
+|
+| WTFserver
+|
+| + abc
+  |
+  | abc.Manifest
+  | 
+  | abc.History
+
+Where “abc.1” is now renamed to “abc”, so the original “abc” and “abc.2” were deleted.
+
